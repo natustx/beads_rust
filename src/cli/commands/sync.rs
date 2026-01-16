@@ -15,7 +15,7 @@ use crate::sync::{
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tracing::{debug, info, warn};
 
 /// Result of a flush (export) operation.
@@ -79,6 +79,7 @@ pub fn execute(args: &SyncArgs, json: bool, cli: &config::CliOverrides) -> Resul
     let (mut storage, paths) = config::open_storage(&beads_dir, cli.db.as_ref(), cli.lock_timeout)?;
 
     let jsonl_path = paths.jsonl_path;
+    let retention_days = paths.metadata.deletions_retention_days;
     let use_json = json || args.robot;
     let path_policy = validate_sync_paths(&beads_dir, &jsonl_path, args.allow_external_jsonl)?;
     debug!(
@@ -102,7 +103,7 @@ pub fn execute(args: &SyncArgs, json: bool, cli: &config::CliOverrides) -> Resul
     }
 
     if args.flush_only {
-        execute_flush(&mut storage, &path_policy, args, use_json)
+        execute_flush(&mut storage, &path_policy, args, use_json, retention_days)
     } else {
         execute_import(&mut storage, &path_policy, args, use_json)
     }
@@ -166,6 +167,18 @@ fn validate_sync_paths(
     let manifest_path = canonical_beads.join(".manifest.json");
     let jsonl_temp_path = jsonl_path.with_extension("jsonl.tmp");
 
+    if contains_git_dir(&jsonl_path) {
+        warn!(
+            path = %jsonl_path.display(),
+            "Rejected JSONL path inside .git directory"
+        );
+        return Err(BeadsError::Config(format!(
+            "Refusing to use JSONL path inside .git directory: {}.\n\
+             Move the JSONL path outside .git to proceed.",
+            jsonl_path.display()
+        )));
+    }
+
     debug!(
         jsonl_path = %jsonl_path.display(),
         jsonl_temp_path = %jsonl_temp_path.display(),
@@ -179,6 +192,13 @@ fn validate_sync_paths(
         jsonl_temp_path,
         manifest_path,
         is_external,
+    })
+}
+
+fn contains_git_dir(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::Normal(name) => name == ".git",
+        _ => false,
     })
 }
 
@@ -233,11 +253,7 @@ fn execute_status(
         jsonl_newer,
         db_newer,
     };
-    debug!(
-        jsonl_newer,
-        db_newer,
-        "Computed sync staleness"
-    );
+    debug!(jsonl_newer, db_newer, "Computed sync staleness");
 
     if json {
         println!("{}", serde_json::to_string_pretty(&status)?);
@@ -270,6 +286,7 @@ fn execute_flush(
     path_policy: &SyncPathPolicy,
     args: &SyncArgs,
     json: bool,
+    retention_days: Option<u64>,
 ) -> Result<()> {
     info!("Starting JSONL export");
     let export_policy = parse_export_policy(args)?;
@@ -279,6 +296,7 @@ fn execute_flush(
         external_jsonl = path_policy.is_external,
         export_policy = %export_policy,
         force = args.force,
+        ?retention_days,
         "Export configuration resolved"
     );
 
@@ -371,6 +389,7 @@ fn execute_flush(
         force: args.force,
         is_default_path: true,
         error_policy: export_policy,
+        retention_days,
     };
 
     // Execute export
@@ -511,6 +530,7 @@ fn format_error_suffix(errors: &[ExportError], entity: ExportEntityType) -> Stri
 }
 
 /// Execute the --import-only operation.
+#[allow(clippy::too_many_lines)]
 fn execute_import(
     storage: &mut crate::storage::SqliteStorage,
     path_policy: &SyncPathPolicy,
