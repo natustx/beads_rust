@@ -40,32 +40,42 @@ Update it as soon as new work is discovered or completed.
 - [x] Added **non-classic CLI command flag matrix** with explicit exclusion notes.
 - [x] Documented **lint, markdown bulk create, info, version, and template commands** with JSON schemas.
 - [x] Documented **graph/where/quick/prime/help/preflight commands** with port notes.
+- [x] Documented **sync workflow deep dive** (pull-first flow, sync-branch, integrity checks).
+- [x] Documented **JSONL content merge driver** (tombstone TTL, conflict rules, dependency merge).
+- [x] Documented **export error policies + manifest** (strict/best-effort/partial/required-core).
+- [x] Documented **doctor/cleanup/compact** maintenance commands (excluded but specified).
 
 ### Follow-up deep dives (keep expanding)
 
-- [ ] **Sync workflow deep dive (git-heavy, non-classic):**
-  - [ ] `sync` full flow with git operations (stage/commit/push/pull).
-  - [ ] `sync-branch` and merge snapshot lifecycle (base/left/right + meta).
-  - [ ] Conflict resolution rules (JSONL merge driver + metadata).
-  - [ ] Remote selection and routing behavior.
-- [ ] **Import/export correctness audit:**
-  - [ ] Verify export error policy modes (`strict`, `best-effort`, `partial`, `required-core`) against `internal/export`.
-  - [ ] Confirm import update precedence when timestamps collide.
-  - [ ] Capture all JSON output shapes for import/export warnings/manifest.
+- [ ] **Import/export correctness audit (still incomplete):**
+  - [x] Export error policy modes + manifest shape.
+  - [ ] Confirm export **data coverage** and `core` vs `enrichment` semantics in manifests.
+  - [ ] Capture JSON output shapes for `bd export` / `bd import` (warnings, summaries, manifests).
+  - [ ] Confirm import update precedence on **equal timestamps** + `protect_local_export_ids`.
+  - [ ] Verify `--rename-on-import` reference rewrite scope (fields + deps + comments).
+- [ ] **Sync + merge driver integration (git-heavy, non-classic):**
+  - [ ] Document merge-driver install + `.gitattributes` wiring during `bd init`.
+  - [ ] Confirm `resolve-conflicts` flow and merge artifact cleanup.
+  - [ ] Record mass-delete safety thresholds + config keys (sync-branch).
 - [ ] **Maintenance/repair commands (non-classic):**
-  - [ ] `doctor` / `repair` / `cleanup` / `compact` behavior, flags, and safety guards.
-  - [ ] Verify tombstone pruning rules (age vs dependency-driven purge).
+  - [ ] `repair` command behavior and JSON output.
+  - [ ] `migrate` subcommands (`hash-ids`, `issues`, `sync`, `tombstones`) for parity decisions.
+  - [ ] Verify tombstone pruning rules (age vs dependency-driven purge) in `internal/compact`.
 - [ ] **Hierarchy + templates + epics:**
-  - [ ] `epic` command behavior and flags (if distinct from core CRUD).
+  - [ ] Re-verify epic command details + JSON output.
 - [ ] **Integrations + automation (explicitly excluded):**
-  - [ ] `hooks`, `daemon`, `gate`, `mol`, `agent`, `swarm`, `linear`, `jira`, `mail`.
-  - [ ] Document their JSON outputs for exclusion clarity.
+  - [ ] Confirm hooks/daemon/gate/mol/agent/swarm/linear/jira/mail JSON outputs for exclusion clarity.
 - [ ] **Config key catalog validation:**
   - [ ] Cross-check config keys vs migrations + YAML-only keys.
   - [ ] Confirm default values and env var bindings.
 - [ ] **Conformance harness plan:**
   - [ ] Map each classic command to a test case with expected JSON output.
   - [ ] Record parity checks for schema + JSONL shapes.
+- [ ] **Interactive workflows:**
+  - [ ] Document `create-form` behavior + output shapes.
+- [ ] **Open design decisions (classic port):**
+  - [ ] Decide whether `br` needs a JSONL merge driver at all (git ops excluded).
+  - [ ] If yes: expand merge schema to avoid dropping non-core fields (labels/comments/assignee/design/etc).
 
 ---
 
@@ -5555,15 +5565,31 @@ Gastown-only flags and types are noted but excluded from the Rust port (see Port
 
 #### 15.59.1 merge (git merge driver)
 
-**Purpose**: 3-way merge driver for `.beads/issues.jsonl`.
+**Purpose**: 3-way JSONL merge driver for `.beads/issues.jsonl`.
+Also reused for **sync-branch divergence recovery** when git rebase would
+resurrect tombstones.
 
 **Usage**: `bd merge <output> <base> <left> <right>`
 - Exit codes: `0` success, `1` conflicts, `2` error.
-- Uses merge rules:
-  - identity by `{id, created_at, created_by}`
-  - `updated_at` wins for most fields
-  - dependencies unioned
-  - tombstones preserved
+- Merge rules (content‑level):
+  - **Identity** by `{id, created_at, created_by}` with **ID fallback** if timestamps differ.
+  - **Tombstones** win over live issues unless **expired** (TTL = 30 days + 1h clock‑skew grace).
+  - **Deletion beats modification** if issue disappears on one side vs base.
+  - **Title/description**: newer `updated_at` wins.
+  - **Notes**: concatenate with separator `\n\n---\n\n`.
+  - **Status**: `closed` overrides open; tombstone handled above.
+  - **Priority**: `0` treated as unset; otherwise lower number wins.
+  - **Issue type**: left side wins on conflict (local bias).
+  - **Closed metadata**: `closed_at` uses newest timestamp; `close_reason/closed_by_session`
+    taken from side with newer `closed_at`.
+  - **Dependencies**: 3‑way merge where **removals win**; union additions; left metadata preferred.
+- Output is **sorted by ID** for deterministic diffs.
+- Conflicts are rare (auto‑resolved); if emitted, they are appended to output and
+  the command returns non‑zero.
+
+**Schema caveat**:
+- Merge driver schema is a **subset** of full issue fields. Any unknown JSON fields
+  (labels/comments/assignee/design/etc) are **dropped** on output.
 
 **Note**: Not for duplicate issues (use `bd duplicates`).
 
@@ -5908,6 +5934,65 @@ Integrity logic exists as helper functions used by export/sync.
 
 ### 15.68 Sync Submodes (Legacy Git Workflow)
 
+`bd sync` is **pull-first** and **merge-aware**. It runs in **direct mode** (no daemon)
+to avoid stale SQLite handles.
+
+#### 15.68.1 Core `bd sync` flow (pull-first)
+
+Default flow (when neither `--no-pull` nor `--squash` is set):
+1) **Load local DB state** (includes tombstones)
+2) Acquire `.beads/.sync.lock` (prevents concurrent sync)
+3) Load **base state** from `.beads/sync_base.jsonl` (may be empty on first sync)
+4) Pull remote:
+   - If `sync.branch` configured → **worktree sync-branch** pull (see 15.68.2)
+   - Else → `git pull` on current branch
+5) Load **remote state** from JSONL **after pull**
+6) **3-way merge**: `base` × `local` × `remote` → merged JSONL (LWW + unions)
+7) Import merged JSONL into DB
+8) Export DB → JSONL (DB is source of truth)
+9) Commit + push changes (branch or sync-branch worktree)
+10) Update base state (`sync_base.jsonl`) **after** successful push
+11) Clear transient sync state (if present)
+
+Important behaviors:
+- **Pull-first** avoids “export-before-pull” data loss (local overwriting remote).
+- Base state update is **post-push** to avoid acknowledging an export that never made it to git.
+- A preflight check warns on **uncommitted `.beads` changes** and re-exports to reconcile.
+- If git is in a merge/rebase state (`unmerged paths`), sync **aborts** with guidance.
+
+#### 15.68.2 Sync-branch worktree mode
+
+When `sync.branch` (aka `sync-branch`) is configured, sync uses a **dedicated worktree**
+under the repo’s **git common dir**:
+```
+<git-common-dir>/beads-worktrees/<sync-branch>/
+```
+
+Key points:
+- JSONL and `metadata.json` are synced **into** the worktree, committed there,
+  and pushed from the worktree (to avoid touching the user’s working tree).
+- Commits in the worktree use `--no-verify` (hooks are skipped).
+- Push sets `BD_SYNC_IN_PROGRESS=1` so pre-push hooks can bypass circular warnings.
+- Before committing, the worktree attempts a **preemptive fetch + fast-forward**
+  to reduce divergence.
+- Divergence recovery uses **content merge** (JSONL 3-way merge), **not** git rebase,
+  to avoid tombstone resurrection.
+
+**Mass deletion safety (sync-branch only)**:
+- After a **divergent merge**, if **>50% issues vanish** and **>5 existed**,
+  warnings are attached to the result.
+- If `sync.require_confirmation_on_mass_delete=true`, auto-push is **skipped**
+  until confirmation; otherwise it pushes with warnings.
+
+#### 15.68.3 Redirect + sync-branch incompatibility
+
+If `.beads/redirect` is active:
+- Git operations are **skipped** (the “owner” repo handles sync).
+- If `sync.branch` is configured **and** redirect is active, sync prints a warning
+  and **only exports JSONL** locally.
+
+#### 15.68.4 Submodes
+
 **`bd sync --status`**:
 - Shows branch differences between current branch and `sync.branch`.
 - Prints commit logs (`git log --oneline`) and diff for `.beads/issues.jsonl`.
@@ -5921,6 +6006,7 @@ Integrity logic exists as helper functions used by export/sync.
 - One-way sync from default remote branch (uses `sync.remote` if set).
 - Steps: fetch remote, checkout `.beads/` from remote branch, import JSONL.
 - Forces `noGitHistory` to avoid deletion artifacts.
+- Auto-selected when **no upstream** exists but a remote does (ephemeral branches).
 
 **`bd sync --check`**:
 - Runs pre-sync integrity checks:
@@ -5928,6 +6014,20 @@ Integrity logic exists as helper functions used by export/sync.
   - prefix mismatch in JSONL
   - orphaned children in JSONL
 - Exits with code 1 if problems found.
+- `--json` returns a structured `SyncIntegrityResult`.
+
+**`bd sync --import-only`**:
+- Imports JSONL directly (no git).
+- Uses **inline import** (no subprocess) to avoid `.beads/redirect` path issues.
+
+**`bd sync --flush-only`**:
+- Exports pending changes to JSONL and exits (no git).
+
+**`bd sync --no-pull`**:
+- Skips pull/merge: export → commit → push.
+
+**`bd sync --squash`**:
+- Export only; do **not** commit/push (accumulate changes for a later sync).
 
 **Port note (non-invasive)**:
 - `br` v1 should **exclude all git-based sync modes**.
@@ -6644,6 +6744,477 @@ unless the command defines its own dedicated flag.
 | `edit` | `--title`, `--description`, `--design`, `--notes`, `--acceptance` | Optional |
 | `status` | `--all`, `--assigned`, `--no-activity` | Optional |
 | `state set` | `--reason` | Optional |
+
+---
+
+### 15.83 Sync Workflow Deep Dive (Git-Heavy, Excluded in br v1)
+
+`bd sync` is a **git-centric**, multi-step pipeline that treats SQLite as the source
+of truth but protects against cross-clone data loss with a pull-first 3‑way merge.
+`br` v1 should **exclude** all git workflows and keep only `sync --flush-only`
+and `sync --import-only` as aliases of export/import.
+
+**Key design choices**:
+- **Direct-mode only**: `bd sync` forcibly drops daemon connections to avoid
+  stale SQLite file handles (critical when DB file was deleted/recreated).
+- **Pull-first**: remote changes are pulled **before** exporting local state
+  to avoid overwriting remote JSONL with stale local DB data (GH#911).
+- **3‑way merge**: base/local/remote JSONL merge minimizes data loss.
+- **Explicit locking**: `.beads/.sync.lock` prevents concurrent sync runs.
+
+**Sync modes and flags**:
+- `--flush-only`: export JSONL only (no git ops). Used by hooks and manual flush.
+- `--import-only`: import JSONL only; uses **inline import** to avoid redirect path issues.
+- `--squash`: export-only without commit/push (accumulate changes into a single later commit).
+- `--no-pull`: skip pull/merge; export → commit → (optional) push.
+- `--from-main`: one-way sync for **ephemeral branches** (no upstream).
+- `--status`: show diff between sync branch and current branch (text only).
+- `--merge`: merge sync branch into current branch (text only).
+- `--check`: pre-sync integrity scan (JSON-capable; see below).
+- `--rename-on-import`: rewrite imported IDs to configured prefix.
+- `--accept-rebase`: reserved flag (unused in current flow).
+
+**Preflight checks**:
+- Rejects merge/rebase in progress (unmerged paths, MERGE_HEAD).
+- Detects **uncommitted JSONL changes** and re-exports DB to reconcile.
+- In redirected clones, **skips all git ops** and performs export-only.
+- If no upstream and no `sync.branch`, auto-switches to `--from-main` when remote exists.
+
+**Pull-first flow** (default):
+1. Load local issues from DB (includes tombstones; excludes wisps).
+2. Acquire `.sync.lock`.
+3. Load base state from `.beads/sync_base.jsonl` (may be empty on first sync).
+4. `git pull` or `syncbranch.PullFromSyncBranch` (if `sync.branch` configured).
+5. Load remote JSONL after pull.
+6. 3‑way merge (see **15.83.1** below).
+7. Write merged JSONL → import merged state to DB → export DB back to JSONL.
+8. Commit/push:
+   - If `sync.branch` configured: commit/push via worktree.
+   - Otherwise: commit `.beads/` only (issues.jsonl, deletions.jsonl, interactions.jsonl, metadata.json).
+9. Update base state **after successful push**.
+10. Clear sync state markers.
+
+**`--no-pull` flow**:
+- Skips steps 3–7; performs export → commit → (optional) push.
+- Still runs pre-export integrity checks and template validation.
+
+**`--from-main` flow**:
+- Fetches `sync.remote` (default `origin`) and checks out `.beads/` from default branch.
+- Imports JSONL (forces `noGitHistory=true` to avoid wrong deletions).
+- Intended for ephemeral branches without upstream.
+
+**Redirect + sync-branch incompatibility**:
+- If redirected, **sync.branch is ignored** and only export runs.
+
+**`--check` (integrity)** JSON shape:
+```json
+{
+  "forced_push": { "detected": false, "local_ref": "...", "remote_ref": "...", "message": "..." },
+  "prefix_mismatch": { "configured_prefix": "bd", "mismatched_ids": ["bd-x", "..."], "count": 2 },
+  "orphaned_children": { "orphaned_ids": ["bd-1 (parent: bd-99)"], "count": 1 },
+  "has_problems": true
+}
+```
+
+**Port note**:
+- `br` should **not** implement git pulls/pushes, sync branches, or 3‑way JSONL merges.
+- Keep only `--flush-only` / `--import-only` as explicit user actions.
+
+#### 15.83.1 3‑Way Merge Rules (sync_merge.go)
+
+The 3‑way merge is **issue‑level**, with field‑level merge on true conflicts:
+- **Identity**: by issue ID.
+- **Scalar fields**: last‑write‑wins by `updated_at` (remote wins on tie).
+- **Labels**: union (dedupe).
+- **Dependencies**: union by `(depends_on_id, type)` (keep newer `created_at`).
+- **Comments**: append + dedupe (by `id`, else by author+text), sorted by `created_at`.
+
+Deletion handling:
+- If local deleted and remote unchanged from base → delete.
+- If remote deleted and local unchanged → delete.
+- If deletion conflicts with edits → keep edited version (conflict resolved via LWW).
+
+Base state storage: `.beads/sync_base.jsonl` (atomic writes).
+
+---
+
+### 15.84 Import/Export Correctness Audit
+
+This section synthesizes **actual import/export correctness rules** from
+`cmd/bd/import.go`, `cmd/bd/sync_export.go`, and `internal/importer`/`internal/export`.
+
+#### 15.84.1 Export Policies and Manifest
+
+**Error policies** (configurable via DB config keys):
+- `export.error_policy`: `strict` (default), `best-effort`, `partial`, `required-core`.
+- `auto_export.error_policy`: defaults to `best-effort` for auto-flush.
+- `export.retry_attempts` (default 3), `export.retry_backoff_ms` (default 100).
+- `export.skip_encoding_errors` (default false).
+- `export.write_manifest` (default false).
+
+**Policy behaviors**:
+- `strict`: fail fast on any error.
+- `best-effort`: warn and continue; missing data accepted.
+- `partial`: retry then skip; manifest records missing data.
+- `required-core`: issues/deps must succeed; labels/comments best‑effort.
+
+**Retry/backoff**:
+- Export fetches are wrapped in **exponential backoff** using the retry settings.
+
+**Manifest file** (optional):
+- Path: `<issues>.manifest.json` (derived by replacing `.jsonl`).
+- Written atomically with `0600` permissions.
+- Includes:
+```json
+{
+  "exported_count": 123,
+  "failed_issues": [{ "issue_id": "bd-abc", "reason": "..." }],
+  "partial_data": ["labels", "comments"],
+  "warnings": ["..."],
+  "complete": false,
+  "exported_at": "2026-01-16T00:00:00Z",
+  "error_policy": "partial"
+}
+```
+
+#### 15.84.2 Export Correctness Rules (sync_export)
+
+- Includes **tombstones** for sync propagation.
+- Excludes **ephemeral/wisp** issues from JSONL.
+- Sorted by ID for deterministic diffs.
+- Populates dependencies/labels/comments for each issue.
+- Atomic write: temp file → rename; permissions `0600`.
+- **Safety guard**: refuse to overwrite non‑empty JSONL with empty DB.
+- Metadata updates (after successful export):
+  - Clear dirty flags for exported IDs.
+  - `jsonl_content_hash` updated.
+  - `last_import_time` updated.
+  - DB mtime touched to be ≥ JSONL mtime.
+
+#### 15.84.3 Import Correctness Rules (internal/importer)
+
+**Core precedence**:
+- Updates are **timestamp‑gated**: only apply if incoming `updated_at` is **newer**.
+- Equal or older timestamps → **skip update** (local wins).
+
+**Matching order**:
+1. **external_ref** (if present): updates existing issue by external_ref (timestamp‑gated).
+2. **content hash**: exact match → unchanged; same content with different ID:
+   - Different prefix → treated as **duplicate**, skipped.
+   - Same prefix → treated as rename (legacy path; mostly obsolete with hash IDs).
+3. **ID collision**: same ID, different content → update (timestamp‑gated).
+4. **New**: create.
+
+**Tombstone safety**:
+- If DB has tombstone for ID, incoming is skipped (prevents resurrection).
+
+**Prefix mismatch**:
+- Detected across all incoming issues.
+- `--rename-on-import` rewrites IDs and all references to DB prefix.
+- In multi‑repo mode, prefix validation is skipped.
+
+**Orphan handling** (`import.missing_parents` config or flag):
+- `strict` / `resurrect` / `skip` / `allow` (default allow).
+- `skip` filters hierarchical children whose parent is missing **before** create.
+
+**Duplicate external_ref handling**:
+- Default: error on duplicates.
+- `--clear-duplicate-external-refs`: clears dupes (keeps first occurrence).
+
+**Protect‑left‑snapshot**:
+- If `--protect-left-snapshot` is set, import protects entries that appear in
+  `beads.left.jsonl` **when local timestamp ≥ incoming** (GH#865).
+
+**Post‑import metadata**:
+- Updates `jsonl_content_hash`, `jsonl_file_hash`, `last_import_time`.
+- Touches DB mtime **even if no changes**, to avoid “JSONL newer” false positives.
+
+#### 15.84.4 Import/Export JSON Output
+
+**Import**:
+- Has `--json` flag, but the CLI **does not emit a JSON summary** in normal flow.
+  This appears to be a legacy gap; output is stderr text + exit code.
+
+**Export**:
+- `export --format jsonl` emits JSONL itself; no separate summary JSON.
+- Obsidian format emits Markdown, not JSON.
+
+**Port note**:
+- `br` should either implement proper JSON summaries or **omit** the `--json`
+  flags for import/export to avoid misleading behavior.
+
+---
+
+### 15.85 Maintenance / Repair Commands (Non‑Classic)
+
+These commands are **git‑heavy** or destructive and should be excluded from `br` v1.
+They are documented here for completeness and compatibility reasoning.
+
+#### 15.85.1 `bd cleanup`
+
+Deletes closed issues and prunes tombstones:
+- Requires `--force` unless `--dry-run`.
+- Supports `--older-than`, `--cascade`, `--hard`, `--ephemeral`.
+- Skips **pinned** issues.
+- Uses `deleteBatch` → creates tombstones, then prunes expired tombstones.
+- `--hard` bypasses 30‑day tombstone TTL:
+  - If `--older-than` is set, it becomes the TTL cutoff.
+  - If `--older-than` is omitted, tombstones expire **immediately** (negative TTL).
+- Emits a **hard‑delete warning** unless JSON mode / dry‑run.
+
+**JSON output**:
+- Empty case:
+```json
+{ "deleted_count": 0, "message": "No closed issues to delete", "filter": "older than 30 days", "ephemeral": true }
+```
+- Non‑empty case reuses `bd delete` batch output (see 15.58).
+
+#### 15.85.2 `bd compact`
+
+Compaction is **AI‑assisted** or agent‑assisted summarization of closed issues.
+Modes:
+- `--stats`: DB compaction stats.
+- `--prune`: tombstone pruning by age.
+- `--purge-tombstones`: dependency‑aware purging.
+- `--analyze`: export candidates for review (JSON).
+- `--apply`: apply provided summary to a specific issue.
+- `--auto`: legacy AI‑powered compaction (requires API key).
+
+**Key behaviors**:
+- Modes are **mutually exclusive** (`--prune/--purge-tombstones/--analyze/--apply/--auto`).
+- `--analyze` / `--apply` require **direct DB access** (no daemon).
+- Tiers:
+  - Tier 1: ~30 days closed, target ~70% reduction.
+  - Tier 2: ~90 days closed, target ~95% reduction.
+- `--apply` writes compaction metadata (`compaction_level`, `compacted_at`, `original_size`,
+  `compacted_at_commit`) and replaces long-form fields with the provided summary.
+- Auto mode uses Anthropic Haiku; concurrency defaults to 5 workers.
+
+**Port note**:
+- Exclude all compaction modes from `br` v1.
+
+#### 15.85.3 `bd repair`
+
+Direct‑SQLite repair for orphaned foreign keys (bypasses beads storage invariants).
+
+**JSON output**:
+```json
+{
+  "database_path": "/abs/.beads/beads.db",
+  "dry_run": false,
+  "orphan_counts": {
+    "dependencies_issue_id": 1,
+    "dependencies_depends_on": 2,
+    "labels": 0,
+    "comments": 0,
+    "events": 0,
+    "total": 3
+  },
+  "orphan_details": {
+    "dependencies_issue_id": [{ "issue_id": "bd-1", "depends_on_id": "bd-2" }]
+  },
+  "status": "success",
+  "backup_path": "beads.db.pre-repair"
+}
+```
+
+#### 15.85.4 `bd doctor`
+
+Large health check + auto‑fix framework:
+- Scans schema, migrations, JSONL integrity, sync divergence, daemon health,
+  git hooks, redirect status, etc.
+- `--fix` can regenerate JSONL from DB and repair common issues.
+- `--deep` performs graph‑level integrity checks (parents, deps, epics, agents).
+- `--perf` emits performance diagnostics.
+- `--check=pollution` detects test issues; `--clean` deletes them (with confirmation).
+- `--check-health` runs a **silent quick** check (used for hints).
+- Recovery flags: `--force` (repair even when DB won’t open),
+  `--source=auto|jsonl|db` (choose source of truth),
+  `--fix-child-parent` (opt‑in removal of child→parent deps),
+  `--dry-run` / `--interactive` / `--yes`.
+
+**Fix actions (selected)**:
+- **DB↔JSONL sync**: chooses `bd export` vs `bd sync --import-only` based on
+  issue counts + mtime (prevents no‑op syncs).
+- **Deletion manifest hydration**: rebuilds deletions from git history while
+  **excluding tombstones** (prevents re‑deleting migrated issues).
+- **Git housekeeping**: refresh `.beads/.gitignore`, sync‑branch gitignore, hook checks.
+- **Data integrity**: orphan dependency cleanup; optional child→parent cleanup.
+- **Maintenance**: stale closed issue cleanup + expired tombstone pruning.
+- **Permissions**: fix read/write errors on `.beads` files.
+
+**JSON output**:
+```json
+{
+  "path": "/abs/repo",
+  "checks": [{ "name": "JSONL Integrity", "status": "error", "message": "...", "fix": "..." }],
+  "overall_ok": false,
+  "cli_version": "0.47.2",
+  "timestamp": "2026-01-16T00:00:00Z",
+  "platform": { "os": "...", "arch": "..." }
+}
+```
+
+**Port note**:
+- `br` should keep only **minimal, non‑destructive** integrity checks
+  (JSONL validity + schema sanity) if any.
+
+---
+
+### 15.86 Epic Command Details (Pre‑Gastown)
+
+`bd epic` is a **classic** helper for epics/children:
+- `bd epic status [--eligible-only]` returns `EpicStatus[]` where each entry includes:
+  - `epic` issue object
+  - `total_children`, `closed_children`, `eligible_for_close`
+- `bd epic close-eligible [--dry-run]` closes all epics where all children are closed.
+
+**JSON output**:
+- `epic status` → array of `EpicStatus` objects.
+- `epic close-eligible` → `{ "closed": ["bd-..."], "count": N }` (or `[]` in dry‑run).
+
+**Port note**:
+- Optional to keep in `br`; easy to re‑implement on top of dependency graph.
+
+---
+
+### 15.87 Excluded Integrations & Automation (JSON Output Shapes)
+
+These commands are **excluded** in `br` v1 but their JSON shapes are captured for
+compatibility tests and future parity decisions.
+
+#### 15.87.1 Hooks
+
+- `hooks install` → `{ "success": true, "message": "...", "shared": bool, "chained": bool }`
+- `hooks uninstall` → `{ "success": true, "message": "..." }`
+- `hooks list` → `{ "hooks": [ { "name": "...", "installed": true, "version": "...", "is_shim": false, "outdated": false } ] }`
+
+#### 15.87.2 Daemon / Daemons
+
+**Status**:
+```json
+{
+  "workspace": "/abs/repo",
+  "pid": 12345,
+  "version": "0.47.2",
+  "status": "healthy|outdated|not_running",
+  "uptime_seconds": 123.4,
+  "auto_commit": true,
+  "auto_push": true,
+  "auto_pull": false
+}
+```
+
+**All status**:
+```json
+{ "total": 2, "healthy": 1, "outdated": 1, "stale": 0, "unresponsive": 0, "daemons": [ ... ] }
+```
+
+**Daemons list**: array of `DaemonInfo` (workspace, pid, version, uptime, last_activity, lock).
+**Stop**: `{ "workspace": "...", "pid": 123, "stopped": true }`
+**Restart**: `{ "workspace": "...", "action": "restarted" }`
+**Logs**: `{ "workspace": "...", "log_path": "...", "content": "..." }`
+**Health**: `{ "total": N, "healthy": X, "stale": Y, "mismatched": Z, "daemons": [ ... ] }`
+
+#### 15.87.3 Gate
+
+- `gate list` → array of Issue objects (type `gate`).
+- `gate show` → single Issue.
+- `gate check` → `{ "checked": N, "resolved": X, "escalated": Y, "errors": Z, "dry_run": bool }`
+
+#### 15.87.4 Agent
+
+- `agent state` → `{ "agent": "gt-xyz", "agent_state": "running", "last_activity": "RFC3339" }`
+- `agent heartbeat` → `{ "agent": "gt-xyz", "last_activity": "RFC3339" }`
+- `agent show` → `{ "id": "...", "title": "...", "agent_state": "...", "last_activity": "...", "hook_bead": "...", "role_bead": "...", "role_type": "...", "rig": "..." }`
+
+#### 15.87.5 Swarm / Mol / Formula / Wisp / Pour
+
+These are **Gastown‑only** surfaces. They emit JSON objects that mirror internal
+`types.Molecule`, `types.Formula`, or batch operation results. Examples:
+- `mol show` → `{ "molecule": {...}, "issues": [...], "dependencies": [...] }`
+- `mol stale` → `{ "total": N, "stale": [...], "blocking": [...] }`
+- `mol squash` → `{ "deleted": [...], "kept": [...], "summary": "..." }`
+- `swarm status` → `{ "epic_id": "...", "phase": "...", "agents": [...] }`
+
+#### 15.87.6 Linear / Jira
+
+- `linear sync` and `jira sync` emit `SyncResult` objects:
+```json
+{ "success": true, "created": 3, "updated": 2, "warnings": ["..."], "error": "" }
+```
+- `linear status` / `jira status` emit config + counts (external_ref, pending push).
+- `linear teams` returns array of team objects (`id`, `name`, etc.).
+
+#### 15.87.7 Mail Delegation
+
+`bd mail` delegates to an external provider; no JSON output of its own.
+
+#### 15.87.8 Repo / Worktree / Upgrade / Setup / Onboard
+
+- `repo add/remove/list` → small JSON maps (`{added:true,path:"..."}`, `{primary:"...",additional:[...]}`).
+- `worktree` commands do not emit JSON; they wrap git worktree operations.
+- `upgrade` subcommands output JSON maps with status/ack fields when `--json`.
+- `setup`/`onboard` are text-only.
+
+---
+
+### 15.88 Config Key Validation (Defaults + Env Binding)
+
+The canonical defaults and env bindings live in `internal/config`:
+
+**Defaults** (non-exhaustive):
+- `json=false`, `no-daemon=false`, `no-auto-flush=false`, `no-auto-import=false`
+- `no-db=false`, `db=""`, `actor=""`, `issue-prefix=""`
+- `flush-debounce=30s`, `auto-start-daemon=true`, `remote-sync-interval=30s`
+- `routing.mode=auto`, `routing.default=.`, `routing.maintainer=.`, `routing.contributor=~/.beads-planning`
+- `validation.on-create=none`, `validation.on-sync=none`
+- `hierarchy.max-depth=3`
+- `git.author=""`, `git.no-gpg-sign=false`
+- `directory.labels={}`, `external_projects={}`
+
+**Env bindings**:
+- `BD_*` or `BEADS_*` with dots/hyphens mapped to underscores.
+- Legacy envs: `BEADS_FLUSH_DEBOUNCE`, `BEADS_AUTO_START_DAEMON`,
+  `BEADS_IDENTITY`, `BEADS_REMOTE_SYNC_INTERVAL`.
+
+**Port note**:
+- `br` should **shrink** config to non‑invasive keys only and keep explicit
+  user‑driven sync/flush behavior.
+
+---
+
+### 15.89 Conformance Harness Plan (bd ↔ br)
+
+Goal: automated parity testing for **classic** commands in JSON mode.
+
+**Harness outline**:
+1. Seed a fixture repo with deterministic issues + dependencies.
+2. Run `bd <cmd> --json` and `br <cmd> --json` with identical inputs.
+3. Normalize volatile fields (timestamps, hashes, ordering).
+4. Compare JSON output and database schema snapshots.
+
+**Core command coverage**:
+- `create`, `update`, `close`, `reopen`, `delete`
+- `list`, `show`, `ready`, `blocked`, `search`
+- `dep`, `label`, `comments`
+- `count`, `stats/status`, `stale`, `orphans`
+- `export`, `import` (JSONL round-trip)
+
+**Schema checks**:
+- Compare `PRAGMA table_info` and expected indices.
+- Validate JSONL output fields + ordering.
+
+---
+
+### 15.90 Create-Form (Interactive TUI)
+
+`bd create-form` launches a TUI (via `charmbracelet/huh`) to gather fields:
+title, description, type, priority, assignee, labels, design, acceptance,
+external_ref, deps. It then calls the same create path as `bd create`.
+
+**Port note**:
+- Optional in `br` v1. If omitted, document as unsupported.
 
 ---
 
