@@ -7,6 +7,8 @@ use crate::error::{BeadsError, Result};
 use crate::format::{IssueWithCounts, format_issue_line};
 use crate::model::{IssueType, Priority, Status};
 use crate::storage::{ListFilters, SqliteStorage};
+use chrono::Utc;
+use std::collections::HashSet;
 use std::path::Path;
 
 /// Execute the search command.
@@ -32,13 +34,19 @@ pub fn execute(args: &SearchArgs, json: bool) -> Result<()> {
     let storage = SqliteStorage::open(&db_path)?;
 
     let mut filters = build_filters(&args.filters);
-    let limit = filters.limit;
-    let apply_client_sort = args.filters.sort.is_some() || args.filters.reverse;
-    if apply_client_sort {
-        filters.limit = None;
-    }
+    let client_filters = needs_client_filters(&args.filters);
+    let limit = if client_filters {
+        filters.limit.take()
+    } else {
+        None
+    };
 
     let issues = storage.search_issues(query, &filters)?;
+    let issues = if client_filters {
+        apply_client_filters(&storage, issues, &args.filters)?
+    } else {
+        issues
+    };
 
     let mut issues_with_counts: Vec<IssueWithCounts> = issues
         .into_iter()
@@ -126,6 +134,116 @@ fn build_filters(args: &ListArgs) -> ListFilters {
         title_contains: args.title_contains.clone(),
         limit: args.limit,
     }
+}
+
+fn needs_client_filters(args: &ListArgs) -> bool {
+    !args.id.is_empty()
+        || !args.label.is_empty()
+        || !args.label_any.is_empty()
+        || args.priority_min.is_some()
+        || args.priority_max.is_some()
+        || args.desc_contains.is_some()
+        || args.notes_contains.is_some()
+        || args.sort.is_some()
+        || args.reverse
+        || args.deferred
+        || args.overdue
+}
+
+fn apply_client_filters(
+    storage: &SqliteStorage,
+    issues: Vec<crate::model::Issue>,
+    args: &ListArgs,
+) -> Result<Vec<crate::model::Issue>> {
+    let id_filter: Option<HashSet<&str>> = if args.id.is_empty() {
+        None
+    } else {
+        Some(args.id.iter().map(String::as_str).collect())
+    };
+
+    let label_filters = !args.label.is_empty() || !args.label_any.is_empty();
+    let mut filtered = Vec::new();
+    let now = Utc::now();
+    let min_priority = args.priority_min.map(i32::from);
+    let max_priority = args.priority_max.map(i32::from);
+    let desc_needle = args.desc_contains.as_deref().map(|s| s.to_lowercase());
+    let notes_needle = args.notes_contains.as_deref().map(|s| s.to_lowercase());
+    let include_deferred = args.deferred
+        || args
+            .status
+            .iter()
+            .any(|status| status.eq_ignore_ascii_case("deferred"));
+
+    if let Some(min) = min_priority {
+        if !(0..=4).contains(&min) {
+            return Err(BeadsError::InvalidPriority { priority: min });
+        }
+    }
+    if let Some(max) = max_priority {
+        if !(0..=4).contains(&max) {
+            return Err(BeadsError::InvalidPriority { priority: max });
+        }
+    }
+
+    for issue in issues {
+        if let Some(ids) = &id_filter {
+            if !ids.contains(issue.id.as_str()) {
+                continue;
+            }
+        }
+
+        if let Some(min) = min_priority {
+            if issue.priority.0 < min {
+                continue;
+            }
+        }
+        if let Some(max) = max_priority {
+            if issue.priority.0 > max {
+                continue;
+            }
+        }
+
+        if let Some(ref needle) = desc_needle {
+            let haystack = issue.description.as_deref().unwrap_or("").to_lowercase();
+            if !haystack.contains(needle) {
+                continue;
+            }
+        }
+
+        if let Some(ref needle) = notes_needle {
+            let haystack = issue.notes.as_deref().unwrap_or("").to_lowercase();
+            if !haystack.contains(needle) {
+                continue;
+            }
+        }
+
+        if !include_deferred && matches!(issue.status, Status::Deferred) {
+            continue;
+        }
+
+        if args.overdue {
+            let overdue = issue.due_at.is_some_and(|due| due < now) && !issue.status.is_terminal();
+            if !overdue {
+                continue;
+            }
+        }
+
+        if label_filters {
+            let labels = storage.get_labels(&issue.id)?;
+            if !args.label.is_empty() && !args.label.iter().all(|label| labels.contains(label)) {
+                continue;
+            }
+            if !args.label_any.is_empty()
+                && !args.label_any.iter().any(|label| labels.contains(label))
+            {
+                continue;
+            }
+        }
+
+        filtered.push(issue);
+    }
+
+    Ok(filtered)
 }
 
 fn apply_sort(issues: &mut [IssueWithCounts], sort: Option<&str>) -> Result<()> {
