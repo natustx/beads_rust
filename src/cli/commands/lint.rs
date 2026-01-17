@@ -84,7 +84,7 @@ pub fn execute(args: &LintArgs, json: bool, cli: &config::CliOverrides) -> Resul
         let filters = build_filters(args)?;
         storage.list_issues(&filters)?
     } else {
-        resolve_issues(&storage, &beads_dir, args, cli)?
+        resolve_issues(storage, &beads_dir, args, cli)?
     };
 
     let summary = lint_issues(&issues);

@@ -91,7 +91,7 @@ pub fn execute(args: &StatsArgs, json: bool, cli: &config::CliOverrides) -> Resu
     debug!(total = all_issues.len(), "Loaded all issues for stats");
 
     // Compute summary counts
-    let summary = compute_summary(&storage, &all_issues)?;
+    let summary = compute_summary(storage, &all_issues)?;
 
     // Compute breakdowns if requested
     let mut breakdowns = Vec::new();
@@ -106,7 +106,7 @@ pub fn execute(args: &StatsArgs, json: bool, cli: &config::CliOverrides) -> Resu
         breakdowns.push(compute_assignee_breakdown(&all_issues));
     }
     if args.by_label {
-        breakdowns.push(compute_label_breakdown(&storage, &all_issues)?);
+        breakdowns.push(compute_label_breakdown(storage, &all_issues)?);
     }
 
     // Compute recent activity by default (matches bd behavior).

@@ -14,7 +14,9 @@ pub mod routing;
 use crate::error::{BeadsError, Result};
 use crate::model::{IssueType, Priority};
 use crate::storage::SqliteStorage;
-use crate::sync::{export_to_jsonl_with_policy, finalize_export, import_from_jsonl, ExportConfig, ImportConfig};
+use crate::sync::{
+    ExportConfig, ImportConfig, export_to_jsonl_with_policy, finalize_export, import_from_jsonl,
+};
 use crate::util::id::IdConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -271,10 +273,7 @@ impl OpenStorageResult {
 /// # Errors
 ///
 /// Returns an error if configuration loading, JSONL import, or storage setup fails.
-pub fn open_storage_with_cli(
-    beads_dir: &Path,
-    cli: &CliOverrides,
-) -> Result<OpenStorageResult> {
+pub fn open_storage_with_cli(beads_dir: &Path, cli: &CliOverrides) -> Result<OpenStorageResult> {
     let startup_layer = load_startup_config(beads_dir)?;
     let cli_layer = cli.as_layer();
     let merged_layer = ConfigLayer::merge_layers(&[startup_layer, cli_layer]);
@@ -303,7 +302,12 @@ pub fn open_storage_with_cli(
                 allow_external_jsonl: false,
                 ..Default::default()
             };
-            import_from_jsonl(&mut storage, &paths.jsonl_path, &import_config, Some(&prefix))?;
+            import_from_jsonl(
+                &mut storage,
+                &paths.jsonl_path,
+                &import_config,
+                Some(&prefix),
+            )?;
         }
 
         Ok(OpenStorageResult {

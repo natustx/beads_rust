@@ -34,22 +34,12 @@ pub fn execute(command: &DepCommands, json: bool, cli: &config::CliOverrides) ->
     match command {
         DepCommands::Add(args) => dep_add(args, storage, &resolver, &all_ids, &actor, json),
         DepCommands::Remove(args) => dep_remove(args, storage, &resolver, &all_ids, &actor, json),
-        DepCommands::List(args) => dep_list(
-            args,
-            storage,
-            &resolver,
-            &all_ids,
-            &external_db_paths,
-            json,
-        ),
-        DepCommands::Tree(args) => dep_tree(
-            args,
-            storage,
-            &resolver,
-            &all_ids,
-            &external_db_paths,
-            json,
-        ),
+        DepCommands::List(args) => {
+            dep_list(args, storage, &resolver, &all_ids, &external_db_paths, json)
+        }
+        DepCommands::Tree(args) => {
+            dep_tree(args, storage, &resolver, &all_ids, &external_db_paths, json)
+        }
         DepCommands::Cycles(args) => dep_cycles(args, storage, json),
     }?;
 

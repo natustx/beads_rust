@@ -28,9 +28,7 @@ pub fn execute(command: &LabelCommands, json: bool, cli: &config::CliOverrides) 
     let storage = &mut storage_ctx.storage;
 
     match command {
-        LabelCommands::Add(args) => {
-            label_add(args, storage, &resolver, &all_ids, &actor, json)
-        }
+        LabelCommands::Add(args) => label_add(args, storage, &resolver, &all_ids, &actor, json),
         LabelCommands::Remove(args) => {
             label_remove(args, storage, &resolver, &all_ids, &actor, json)
         }
