@@ -102,12 +102,15 @@ pub fn execute(args: &ReopenArgs, json: bool, cli: &config::CliOverrides) -> Res
 
         tracing::debug!(previous_status = ?issue.status, "Issue was previously {:?}", issue.status);
 
-        // Build update: set status=open, clear closed_at
+        // Build update: set status=open, clear closed_at, clear tombstone fields
         let update = IssueUpdate {
             status: Some(Status::Open),
             closed_at: Some(None),         // Clear closed_at
             close_reason: Some(None),      // Clear close_reason
             closed_by_session: Some(None), // Clear closed_by_session
+            deleted_at: Some(None),        // Clear deleted_at
+            deleted_by: Some(None),        // Clear deleted_by
+            delete_reason: Some(None),     // Clear delete_reason
             ..Default::default()
         };
 

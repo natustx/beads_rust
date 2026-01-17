@@ -200,6 +200,11 @@ fn build_filters(args: &ListArgs) -> Result<ListFilters> {
         limit: args.limit,
         sort: args.sort.clone(),
         reverse: args.reverse,
+        labels: if args.label.is_empty() {
+            None
+        } else {
+            Some(args.label.clone())
+        },
     })
 }
 

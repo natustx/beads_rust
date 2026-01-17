@@ -231,6 +231,7 @@ fn build_update(args: &UpdateArgs, actor: &str) -> Result<IssueUpdate> {
         _ => None,
     };
 
+    // Build update struct
     Ok(IssueUpdate {
         title: args.title.clone(),
         description: args.description.clone().map(Some),
@@ -249,6 +250,9 @@ fn build_update(args: &UpdateArgs, actor: &str) -> Result<IssueUpdate> {
         closed_at,
         close_reason: None,
         closed_by_session: args.session.clone().map(Some),
+        deleted_at: None,
+        deleted_by: None,
+        delete_reason: None,
     })
 }
 

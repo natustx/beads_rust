@@ -267,7 +267,7 @@ pub fn is_valid_id_format(id: &str) -> bool {
         return false;
     }
 
-    if hash.len() < 1 || hash.len() > 25 {
+    if hash.is_empty() || hash.len() > 25 {
         return false;
     }
 

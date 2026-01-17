@@ -1436,6 +1436,7 @@ pub fn export_to_writer<W: Write>(storage: &SqliteStorage, writer: &mut W) -> Re
 /// # Errors
 ///
 /// Returns an error if serialization or writing fails under a strict policy.
+#[allow(clippy::too_many_lines)]
 pub fn export_to_writer_with_policy<W: Write>(
     storage: &SqliteStorage,
     writer: &mut W,

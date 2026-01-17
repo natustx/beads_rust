@@ -13,8 +13,12 @@
 //! | Export (10k)        | < 500ms   | Export 10k issues to JSONL       |
 //! | Import (10k)        | < 1s      | Import 10k issues from JSONL     |
 
-// Allow benign casts in test-only code where values are inherently bounded
-#![allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// Allow benign casts and drop order warnings in benchmark code
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::significant_drop_tightening
+)]
 
 use beads_rust::model::{Issue, IssueType, Priority, Status};
 use beads_rust::storage::{IssueUpdate, ListFilters, ReadyFilters, ReadySortPolicy, SqliteStorage};
@@ -176,6 +180,83 @@ fn bench_create_batch(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark updating an issue.
+fn bench_update_issue(c: &mut Criterion) {
+    let mut group = c.benchmark_group("storage/update");
+
+    // Pre-populate database with issues
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("bench.db");
+    let mut storage = SqliteStorage::open(&db_path).unwrap();
+
+    for i in 0..100 {
+        let issue = create_test_issue(i);
+        storage.create_issue(&issue, "benchmark").unwrap();
+    }
+
+    let mut counter = 0usize;
+    group.bench_function("single", |b| {
+        b.iter(|| {
+            let id = format!("bench-{:06}", counter % 100);
+            let update = IssueUpdate {
+                title: Some(format!("Updated title {counter}")),
+                priority: Some(Priority(((counter % 4) + 1) as i32)),
+                status: None,
+                description: None,
+                design: None,
+                acceptance_criteria: None,
+                notes: None,
+                issue_type: None,
+                assignee: None,
+                owner: None,
+                estimated_minutes: None,
+                due_at: None,
+                defer_until: None,
+                external_ref: None,
+                closed_at: None,
+                close_reason: None,
+                closed_by_session: None,
+                deleted_at: None,
+                deleted_by: None,
+                delete_reason: None,
+            };
+            let _ = storage.update_issue(black_box(&id), black_box(&update), "benchmark");
+            counter += 1;
+        });
+    });
+
+    group.finish();
+    drop(dir);
+}
+
+/// Benchmark deleting an issue (soft delete / tombstone).
+fn bench_delete_issue(c: &mut Criterion) {
+    let mut group = c.benchmark_group("storage/delete");
+
+    group.bench_function("single", |b| {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("bench.db");
+        let mut storage = SqliteStorage::open(&db_path).unwrap();
+
+        // Create a large pool of issues to delete
+        for i in 0..10000 {
+            let issue = create_test_issue(i);
+            storage.create_issue(&issue, "benchmark").unwrap();
+        }
+
+        let mut counter = 0usize;
+        b.iter(|| {
+            let id = format!("bench-{:06}", counter % 10000);
+            let _ = storage.delete_issue(black_box(&id), "benchmark", "benchmark deletion", None);
+            counter += 1;
+        });
+
+        drop(dir);
+    });
+
+    group.finish();
+}
+
 // =============================================================================
 // Query Operation Benchmarks
 // =============================================================================
@@ -184,7 +265,7 @@ fn bench_create_batch(c: &mut Criterion) {
 fn bench_list_issues(c: &mut Criterion) {
     let mut group = c.benchmark_group("storage/list");
 
-    for size in [100, 500, 1000] {
+    for size in [100, 500, 1000, 2000, 5000] {
         let (_dir, storage) = setup_db_with_issues(size);
 
         group.throughput(Throughput::Elements(size as u64));
@@ -257,7 +338,7 @@ fn bench_blocked_query(c: &mut Criterion) {
 fn bench_export(c: &mut Criterion) {
     let mut group = c.benchmark_group("sync/export");
 
-    for size in [100, 500, 1000] {
+    for size in [100, 500, 1000, 2000, 5000] {
         let (_dir, storage) = setup_db_with_issues(size);
 
         group.throughput(Throughput::Elements(size as u64));
@@ -277,7 +358,7 @@ fn bench_export(c: &mut Criterion) {
 fn bench_import(c: &mut Criterion) {
     let mut group = c.benchmark_group("sync/import");
 
-    for size in [100, 500, 1000] {
+    for size in [100, 500, 1000, 2000, 5000] {
         // Create source data
         let (_src_dir, src_storage) = setup_db_with_issues(size);
         let mut buffer = Cursor::new(Vec::new());
@@ -350,6 +431,56 @@ fn bench_add_dependency(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark cycle detection.
+fn bench_cycle_detection(c: &mut Criterion) {
+    let mut group = c.benchmark_group("storage/cycle_detection");
+
+    // Create a database with complex dependency graph
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("bench.db");
+    let mut storage = SqliteStorage::open(&db_path).unwrap();
+
+    // Create a chain of issues: 0 <- 1 <- 2 <- 3 <- ... <- 99
+    for i in 0..100 {
+        let issue = create_test_issue(i);
+        storage.create_issue(&issue, "benchmark").unwrap();
+    }
+
+    // Create a long dependency chain
+    for i in 1..100 {
+        let from_id = format!("bench-{i:06}");
+        let to_id = format!("bench-{:06}", i - 1);
+        storage
+            .add_dependency(&from_id, &to_id, "blocks", "benchmark")
+            .ok();
+    }
+
+    group.bench_function("would_create_cycle_true", |b| {
+        b.iter(|| {
+            // This would create a cycle: 0 -> 99 when 99 -> ... -> 0 exists
+            let result = storage.would_create_cycle(
+                black_box("bench-000000"),
+                black_box("bench-000099"),
+            );
+            black_box(result)
+        });
+    });
+
+    group.bench_function("would_create_cycle_false", |b| {
+        b.iter(|| {
+            // This wouldn't create a cycle: checking a non-existent edge
+            let result = storage.would_create_cycle(
+                black_box("bench-000099"),
+                black_box("bench-000000"),
+            );
+            black_box(result)
+        });
+    });
+
+    group.finish();
+    drop(dir);
+}
+
 // =============================================================================
 // Criterion Groups
 // =============================================================================
@@ -358,10 +489,13 @@ criterion_group!(
     storage_benches,
     bench_create_single,
     bench_create_batch,
+    bench_update_issue,
+    bench_delete_issue,
     bench_list_issues,
     bench_ready_query,
     bench_blocked_query,
     bench_add_dependency,
+    bench_cycle_detection,
 );
 
 criterion_group!(sync_benches, bench_export, bench_import,);

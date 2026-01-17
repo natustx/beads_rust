@@ -187,6 +187,9 @@ pub fn create_issue_impl(
     // 5. Validate Issue
     IssueValidator::validate(&issue).map_err(BeadsError::from_validation_errors)?;
 
+    // 5b. Validate Relations (fail fast before DB writes)
+    validate_relations(args, &id)?;
+
     // 6. Dry Run check - return early
     if args.dry_run {
         return Ok(issue);
@@ -201,6 +204,62 @@ pub fn create_issue_impl(
     Ok(issue)
 }
 
+fn validate_relations(args: &CreateArgs, id: &str) -> Result<()> {
+    // Validate Labels
+    for label in &args.labels {
+        if !label.trim().is_empty() {
+            LabelValidator::validate(label)
+                .map_err(|e| BeadsError::validation("label", e.message))?;
+        }
+    }
+
+    // Validate Parent
+    if let Some(parent_id) = &args.parent {
+        if parent_id == id {
+            return Err(BeadsError::validation(
+                "parent",
+                "cannot be parent of itself",
+            ));
+        }
+    }
+
+    // Validate Dependencies
+    for dep_str in &args.deps {
+        let (type_str, dep_id) = if let Some((t, i)) = dep_str.split_once(':') {
+            (t, i)
+        } else {
+            ("blocks", dep_str.as_str())
+        };
+
+        if dep_id == id {
+            return Err(BeadsError::validation("deps", "cannot depend on itself"));
+        }
+
+        // Strict dependency type validation
+        let dep_type: DependencyType = type_str.parse().map_err(|_| {
+            BeadsError::Validation {
+                field: "deps".to_string(),
+                reason: format!("Invalid dependency type: {type_str}"),
+            }
+        })?;
+
+        // Disallow accidental custom types from typos
+        if let DependencyType::Custom(_) = dep_type {
+            return Err(BeadsError::Validation {
+                field: "deps".to_string(),
+                reason: format!(
+                    "Unknown dependency type: '{type_str}'. \
+                     Allowed types: blocks, parent-child, conditional-blocks, waits-for, \
+                     related, discovered-from, replies-to, relates-to, duplicates, \
+                     supersedes, caused-by"
+                ),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 fn add_relations(
     storage: &mut SqliteStorage,
     id: &str,
@@ -213,8 +272,7 @@ fn add_relations(
     for label in &args.labels {
         let label = label.trim();
         if !label.is_empty() {
-            LabelValidator::validate(label)
-                .map_err(|e| BeadsError::validation("label", e.message))?;
+            // Validation already done in validate_relations
             storage.add_label(id, label, actor)?;
             issue.labels.push(label.to_string());
         }
@@ -222,12 +280,7 @@ fn add_relations(
 
     // Parent
     if let Some(parent_id) = &args.parent {
-        if parent_id == id {
-            return Err(BeadsError::validation(
-                "parent",
-                "cannot be parent of itself",
-            ));
-        }
+        // Validation already done
         storage.add_dependency(id, parent_id, "parent-child", actor)?;
 
         issue.dependencies.push(Dependency {
@@ -249,9 +302,7 @@ fn add_relations(
             ("blocks", dep_str.as_str())
         };
 
-        if dep_id == id {
-            return Err(BeadsError::validation("deps", "cannot depend on itself"));
-        }
+        // Validation already done
         storage.add_dependency(id, dep_id, type_str, actor)?;
 
         let dep_type = type_str

@@ -35,48 +35,20 @@ impl ContentHashable for Issue {
 /// - owner, `created_by` (metadata, not content)
 #[must_use]
 pub fn content_hash(issue: &Issue) -> String {
-    let mut hasher = Sha256::new();
-
-    // Helper to add field with null separator
-    // Sanitizes input by replacing null bytes to prevent collision attacks
-    let mut add_field = |value: &str| {
-        if value.contains('\0') {
-            // Replace null with space to preserve length approx and prevent separator confusion
-            hasher.update(value.replace('\0', " ").as_bytes());
-        } else {
-            hasher.update(value.as_bytes());
-        }
-        hasher.update(b"\x00");
-    };
-
-    // Title (required)
-    add_field(&issue.title);
-
-    // Optional text fields
-    add_field(issue.description.as_deref().unwrap_or(""));
-    add_field(issue.design.as_deref().unwrap_or(""));
-    add_field(issue.acceptance_criteria.as_deref().unwrap_or(""));
-    add_field(issue.notes.as_deref().unwrap_or(""));
-
-    // Status as string
-    add_field(issue.status.as_str());
-
-    // Priority as string (P0-P4)
-    add_field(&format!("P{}", issue.priority.0));
-
-    // Issue type as string
-    add_field(issue.issue_type.as_str());
-
-    // Optional fields
-    add_field(issue.assignee.as_deref().unwrap_or(""));
-    add_field(issue.external_ref.as_deref().unwrap_or(""));
-
-    // Boolean flags as "true"/"false"
-    add_field(if issue.pinned { "true" } else { "false" });
-    add_field(if issue.is_template { "true" } else { "false" });
-
-    // Return lowercase hex
-    format!("{:x}", hasher.finalize())
+    content_hash_from_parts(
+        &issue.title,
+        issue.description.as_deref(),
+        issue.design.as_deref(),
+        issue.acceptance_criteria.as_deref(),
+        issue.notes.as_deref(),
+        &issue.status,
+        &issue.priority,
+        &issue.issue_type,
+        issue.assignee.as_deref(),
+        issue.external_ref.as_deref(),
+        issue.pinned,
+        issue.is_template,
+    )
 }
 
 /// Create a content hash from raw components (for import/validation).
