@@ -198,6 +198,9 @@ fn build_filters(args: &ListArgs) -> Result<ListFilters> {
         } else {
             Some(args.label.clone())
         },
+        labels_or: None,
+        updated_before: None,
+        updated_after: None,
     })
 }
 

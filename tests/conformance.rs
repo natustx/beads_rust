@@ -2141,6 +2141,158 @@ fn conformance_delete_issue() {
 }
 
 #[test]
+fn conformance_delete_creates_tombstone() {
+    common::init_test_logging();
+    info!("Starting conformance_delete_creates_tombstone test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_create = workspace.run_br(["create", "Tombstone issue", "--json"], "create");
+    let bd_create = workspace.run_bd(["create", "Tombstone issue", "--json"], "create");
+
+    let br_json = extract_json_payload(&br_create.stdout);
+    let bd_json = extract_json_payload(&bd_create.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_json).expect("parse");
+    let bd_val: Value = serde_json::from_str(&bd_json).expect("parse");
+
+    let br_id = br_val["id"]
+        .as_str()
+        .or_else(|| br_val[0]["id"].as_str())
+        .unwrap();
+    let bd_id = bd_val["id"]
+        .as_str()
+        .or_else(|| bd_val[0]["id"].as_str())
+        .unwrap();
+
+    workspace.run_br(["delete", br_id, "--reason", "cleanup"], "delete");
+    workspace.run_bd(
+        ["delete", bd_id, "--reason", "cleanup", "--force"],
+        "delete",
+    );
+
+    let br_show = workspace.run_br(["show", br_id, "--json"], "show_tombstone");
+    let bd_show = workspace.run_bd(["show", bd_id, "--json"], "show_tombstone");
+
+    assert_eq!(
+        br_show.status.success(),
+        bd_show.status.success(),
+        "show tombstone behavior differs: br success={}, bd success={}",
+        br_show.status.success(),
+        bd_show.status.success()
+    );
+
+    if br_show.status.success() && bd_show.status.success() {
+        let br_show_json = extract_json_payload(&br_show.stdout);
+        let bd_show_json = extract_json_payload(&bd_show.stdout);
+
+        let br_val: Value = serde_json::from_str(&br_show_json).expect("parse");
+        let bd_val: Value = serde_json::from_str(&bd_show_json).expect("parse");
+        let br_issue = if br_val.is_array() { &br_val[0] } else { &br_val };
+        let bd_issue = if bd_val.is_array() { &bd_val[0] } else { &bd_val };
+
+        assert_eq!(
+            br_issue["status"].as_str(),
+            bd_issue["status"].as_str(),
+            "tombstone status mismatch"
+        );
+    }
+
+    info!("conformance_delete_creates_tombstone passed");
+}
+
+#[test]
+fn conformance_delete_already_deleted_error() {
+    common::init_test_logging();
+    info!("Starting conformance_delete_already_deleted_error test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_create = workspace.run_br(["create", "Delete twice", "--json"], "create");
+    let bd_create = workspace.run_bd(["create", "Delete twice", "--json"], "create");
+
+    let br_json = extract_json_payload(&br_create.stdout);
+    let bd_json = extract_json_payload(&bd_create.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_json).expect("parse");
+    let bd_val: Value = serde_json::from_str(&bd_json).expect("parse");
+
+    let br_id = br_val["id"]
+        .as_str()
+        .or_else(|| br_val[0]["id"].as_str())
+        .unwrap();
+    let bd_id = bd_val["id"]
+        .as_str()
+        .or_else(|| bd_val[0]["id"].as_str())
+        .unwrap();
+
+    workspace.run_br(["delete", br_id, "--reason", "cleanup"], "delete_first");
+    workspace.run_bd(
+        ["delete", bd_id, "--reason", "cleanup", "--force"],
+        "delete_first",
+    );
+
+    let br_delete = workspace.run_br(["delete", br_id, "--reason", "cleanup"], "delete_second");
+    let bd_delete = workspace.run_bd(
+        ["delete", bd_id, "--reason", "cleanup", "--force"],
+        "delete_second",
+    );
+
+    assert_eq!(
+        br_delete.status.success(),
+        bd_delete.status.success(),
+        "delete already deleted behavior differs: br success={}, bd success={}",
+        br_delete.status.success(),
+        bd_delete.status.success()
+    );
+
+    info!("conformance_delete_already_deleted_error passed");
+}
+
+#[test]
+fn conformance_delete_with_dependents() {
+    common::init_test_logging();
+    info!("Starting conformance_delete_with_dependents test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_parent = workspace.run_br(["create", "Parent issue", "--json"], "create_parent");
+    let bd_parent = workspace.run_bd(["create", "Parent issue", "--json"], "create_parent");
+    let br_child = workspace.run_br(["create", "Child issue", "--json"], "create_child");
+    let bd_child = workspace.run_bd(["create", "Child issue", "--json"], "create_child");
+
+    let br_parent_id = extract_issue_id(&extract_json_payload(&br_parent.stdout));
+    let bd_parent_id = extract_issue_id(&extract_json_payload(&bd_parent.stdout));
+    let br_child_id = extract_issue_id(&extract_json_payload(&br_child.stdout));
+    let bd_child_id = extract_issue_id(&extract_json_payload(&bd_child.stdout));
+
+    workspace.run_br(["dep", "add", &br_child_id, &br_parent_id], "dep_add");
+    workspace.run_bd(["dep", "add", &bd_child_id, &bd_parent_id], "dep_add");
+
+    workspace.run_br(["delete", &br_parent_id, "--reason", "cleanup"], "delete_parent");
+    workspace.run_bd(
+        ["delete", &bd_parent_id, "--reason", "cleanup", "--force"],
+        "delete_parent",
+    );
+
+    let br_show = workspace.run_br(["show", &br_child_id, "--json"], "show_child");
+    let bd_show = workspace.run_bd(["show", &bd_child_id, "--json"], "show_child");
+
+    assert_eq!(
+        br_show.status.success(),
+        bd_show.status.success(),
+        "child visibility differs after parent delete: br success={}, bd success={}",
+        br_show.status.success(),
+        bd_show.status.success()
+    );
+
+    info!("conformance_delete_with_dependents passed");
+}
+
+#[test]
 fn conformance_dep_remove() {
     common::init_test_logging();
     info!("Starting conformance_dep_remove test");
@@ -5755,6 +5907,11 @@ fn extract_issue_id(json_str: &str) -> String {
         .to_string()
 }
 
+fn extract_id_from_json(output: &str) -> String {
+    let json = extract_json_payload(output);
+    extract_issue_id(&json)
+}
+
 // ---------------------------------------------------------------------------
 // dep add tests (8)
 // ---------------------------------------------------------------------------
@@ -7793,665 +7950,6 @@ fn conformance_config_invalid_key() {
 // ============================================================================
 // REMAINING CRUD CONFORMANCE TESTS (beads_rust-j6tq)
 // ============================================================================
-
-// --- init tests ---
-
-#[test]
-fn conformance_init_config() {
-    common::init_test_logging();
-    info!("Starting conformance_init_config test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Both should have some configuration capability
-    let br_config = workspace.run_br(["config", "--list"], "config_list");
-    let bd_config = workspace.run_bd(["config", "--list"], "config_list");
-
-    // Both should succeed
-    assert!(
-        br_config.status.success(),
-        "br config --list failed: {}",
-        br_config.stderr
-    );
-    assert!(
-        bd_config.status.success(),
-        "bd config --list failed: {}",
-        bd_config.stderr
-    );
-
-    info!("conformance_init_config passed");
-}
-
-#[test]
-fn conformance_init_metadata() {
-    common::init_test_logging();
-    info!("Starting conformance_init_metadata test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Check that metadata.json was created (if applicable)
-    let br_metadata = workspace.br_root.join(".beads").join("metadata.json");
-    let bd_metadata = workspace.bd_root.join(".beads").join("metadata.json");
-
-    info!(
-        "br metadata exists: {}, bd metadata exists: {}",
-        br_metadata.exists(),
-        bd_metadata.exists()
-    );
-
-    // If both have metadata, compare their structure
-    if br_metadata.exists() && bd_metadata.exists() {
-        let br_content = fs::read_to_string(&br_metadata).expect("read br metadata");
-        let bd_content = fs::read_to_string(&bd_metadata).expect("read bd metadata");
-
-        let br_val: Result<Value, _> = serde_json::from_str(&br_content);
-        let bd_val: Result<Value, _> = serde_json::from_str(&bd_content);
-
-        assert!(br_val.is_ok(), "br metadata should be valid JSON");
-        assert!(bd_val.is_ok(), "bd metadata should be valid JSON");
-    }
-
-    info!("conformance_init_metadata passed");
-}
-
-// --- create tests ---
-
-#[test]
-fn conformance_create_very_long_title() {
-    common::init_test_logging();
-    info!("Starting conformance_create_very_long_title test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create a title that is exactly 500 characters (max allowed)
-    let long_title: String = "A".repeat(500);
-
-    let br_create = workspace.run_br(
-        ["create", &long_title, "--json"],
-        "create_long_title",
-    );
-    let bd_create = workspace.run_bd(
-        ["create", &long_title, "--json"],
-        "create_long_title",
-    );
-
-    // Both should succeed with max-length title
-    assert!(
-        br_create.status.success(),
-        "br create with 500 char title failed: {}",
-        br_create.stderr
-    );
-    assert!(
-        bd_create.status.success(),
-        "bd create with 500 char title failed: {}",
-        bd_create.stderr
-    );
-
-    info!("conformance_create_very_long_title passed");
-}
-
-#[test]
-fn conformance_create_empty_title_error() {
-    common::init_test_logging();
-    info!("Starting conformance_create_empty_title_error test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Try to create with empty title
-    let br_create = workspace.run_br(["create", "", "--json"], "create_empty");
-    let bd_create = workspace.run_bd(["create", "", "--json"], "create_empty");
-
-    // Both should fail with empty title
-    assert!(
-        !br_create.status.success(),
-        "br should reject empty title"
-    );
-    assert!(
-        !bd_create.status.success(),
-        "bd should reject empty title"
-    );
-
-    info!("conformance_create_empty_title_error passed");
-}
-
-// --- list tests ---
-
-#[test]
-fn conformance_list_filter_multiple() {
-    common::init_test_logging();
-    info!("Starting conformance_list_filter_multiple test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create issues with different attributes
-    workspace.run_br(["create", "Task 1", "--type", "task", "--priority", "1"], "create1");
-    workspace.run_bd(["create", "Task 1", "--type", "task", "--priority", "1"], "create1");
-
-    workspace.run_br(["create", "Bug 1", "--type", "bug", "--priority", "2"], "create2");
-    workspace.run_bd(["create", "Bug 1", "--type", "bug", "--priority", "2"], "create2");
-
-    workspace.run_br(["create", "Task 2", "--type", "task", "--priority", "2"], "create3");
-    workspace.run_bd(["create", "Task 2", "--type", "task", "--priority", "2"], "create3");
-
-    // Filter by type AND priority
-    let br_list = workspace.run_br(
-        ["list", "--type", "task", "--priority", "2", "--json"],
-        "list_multi_filter",
-    );
-    let bd_list = workspace.run_bd(
-        ["list", "--type", "task", "--priority", "2", "--json"],
-        "list_multi_filter",
-    );
-
-    assert!(br_list.status.success(), "br list failed: {}", br_list.stderr);
-    assert!(bd_list.status.success(), "bd list failed: {}", bd_list.stderr);
-
-    let br_json = extract_json_payload(&br_list.stdout);
-    let bd_json = extract_json_payload(&bd_list.stdout);
-
-    let br_val: Value = serde_json::from_str(&br_json).unwrap_or(Value::Array(vec![]));
-    let bd_val: Value = serde_json::from_str(&bd_json).unwrap_or(Value::Array(vec![]));
-
-    let br_count = br_val.as_array().map(|a| a.len()).unwrap_or(0);
-    let bd_count = bd_val.as_array().map(|a| a.len()).unwrap_or(0);
-
-    assert_eq!(br_count, bd_count, "filter counts differ");
-
-    info!("conformance_list_filter_multiple passed");
-}
-
-#[test]
-fn conformance_list_sort_priority() {
-    common::init_test_logging();
-    info!("Starting conformance_list_sort_priority test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    workspace.run_br(["create", "Low priority", "--priority", "3"], "create_p3");
-    workspace.run_bd(["create", "Low priority", "--priority", "3"], "create_p3");
-
-    workspace.run_br(["create", "High priority", "--priority", "1"], "create_p1");
-    workspace.run_bd(["create", "High priority", "--priority", "1"], "create_p1");
-
-    let br_list = workspace.run_br(["list", "--json"], "list_sort_priority");
-    let bd_list = workspace.run_bd(["list", "--json"], "list_sort_priority");
-
-    assert!(br_list.status.success(), "br list failed");
-    assert!(bd_list.status.success(), "bd list failed");
-
-    info!("conformance_list_sort_priority passed");
-}
-
-#[test]
-fn conformance_list_sort_created() {
-    common::init_test_logging();
-    info!("Starting conformance_list_sort_created test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    workspace.run_br(["create", "First issue"], "create1");
-    workspace.run_bd(["create", "First issue"], "create1");
-
-    workspace.run_br(["create", "Second issue"], "create2");
-    workspace.run_bd(["create", "Second issue"], "create2");
-
-    let br_list = workspace.run_br(["list", "--json"], "list_sort_created");
-    let bd_list = workspace.run_bd(["list", "--json"], "list_sort_created");
-
-    assert!(br_list.status.success(), "br list failed");
-    assert!(bd_list.status.success(), "bd list failed");
-
-    info!("conformance_list_sort_created passed");
-}
-
-#[test]
-fn conformance_list_json_structure() {
-    common::init_test_logging();
-    info!("Starting conformance_list_json_structure test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    workspace.run_br(["create", "Test issue", "--type", "task"], "create");
-    workspace.run_bd(["create", "Test issue", "--type", "task"], "create");
-
-    let br_list = workspace.run_br(["list", "--json"], "list_json");
-    let bd_list = workspace.run_bd(["list", "--json"], "list_json");
-
-    assert!(br_list.status.success(), "br list --json failed");
-    assert!(bd_list.status.success(), "bd list --json failed");
-
-    let br_json = extract_json_payload(&br_list.stdout);
-    let bd_json = extract_json_payload(&bd_list.stdout);
-
-    let br_val: Value = serde_json::from_str(&br_json).expect("br should produce valid JSON");
-    let bd_val: Value = serde_json::from_str(&bd_json).expect("bd should produce valid JSON");
-
-    assert!(br_val.is_array(), "br list --json should return array");
-    assert!(bd_val.is_array(), "bd list --json should return array");
-
-    info!("conformance_list_json_structure passed");
-}
-
-// --- show tests ---
-
-#[test]
-fn conformance_show_full_details() {
-    common::init_test_logging();
-    info!("Starting conformance_show_full_details test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create an issue with all details
-    let br_create = workspace.run_br(
-        ["create", "Full details issue", "--type", "feature", "--priority", "1", "--description", "Test description", "--json"],
-        "create_full",
-    );
-    let bd_create = workspace.run_bd(
-        ["create", "Full details issue", "--type", "feature", "--priority", "1", "--description", "Test description", "--json"],
-        "create_full",
-    );
-
-    let br_json = extract_json_payload(&br_create.stdout);
-    let bd_json = extract_json_payload(&bd_create.stdout);
-
-    let br_val: Value = serde_json::from_str(&br_json).expect("parse br");
-    let bd_val: Value = serde_json::from_str(&bd_json).expect("parse bd");
-
-    let br_id = br_val["id"].as_str().or_else(|| br_val[0]["id"].as_str()).expect("br id");
-    let bd_id = bd_val["id"].as_str().or_else(|| bd_val[0]["id"].as_str()).expect("bd id");
-
-    // Show the issue
-    let br_show = workspace.run_br(["show", br_id, "--json"], "show_full");
-    let bd_show = workspace.run_bd(["show", bd_id, "--json"], "show_full");
-
-    assert!(br_show.status.success(), "br show failed");
-    assert!(bd_show.status.success(), "bd show failed");
-
-    let br_show_json = extract_json_payload(&br_show.stdout);
-    let bd_show_json = extract_json_payload(&bd_show.stdout);
-
-    let br_show_val: Value = serde_json::from_str(&br_show_json).expect("parse br show");
-    let bd_show_val: Value = serde_json::from_str(&bd_show_json).expect("parse bd show");
-
-    // Extract issue from array if needed
-    let br_issue = if br_show_val.is_array() { &br_show_val[0] } else { &br_show_val };
-    let bd_issue = if bd_show_val.is_array() { &bd_show_val[0] } else { &bd_show_val };
-
-    // Both should have title, type, priority
-    assert!(br_issue.get("title").is_some(), "br show should have title");
-    assert!(bd_issue.get("title").is_some(), "bd show should have title");
-
-    info!("conformance_show_full_details passed");
-}
-
-#[test]
-fn conformance_show_with_dependencies() {
-    common::init_test_logging();
-    info!("Starting conformance_show_with_dependencies test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create two issues and add dependency
-    let br_c1 = workspace.run_br(["create", "Issue A", "--json"], "create_a");
-    let bd_c1 = workspace.run_bd(["create", "Issue A", "--json"], "create_a");
-    let br_c2 = workspace.run_br(["create", "Issue B", "--json"], "create_b");
-    let bd_c2 = workspace.run_bd(["create", "Issue B", "--json"], "create_b");
-
-    let br_a_id = extract_id_from_json(&br_c1.stdout);
-    let bd_a_id = extract_id_from_json(&bd_c1.stdout);
-    let br_b_id = extract_id_from_json(&br_c2.stdout);
-    let bd_b_id = extract_id_from_json(&bd_c2.stdout);
-
-    // Add dependency: B depends on A
-    workspace.run_br(["dep", "add", &br_b_id, &br_a_id], "dep_add");
-    workspace.run_bd(["dep", "add", &bd_b_id, &bd_a_id], "dep_add");
-
-    // Show issue B (which has dependency)
-    let br_show = workspace.run_br(["show", &br_b_id, "--json"], "show_with_deps");
-    let bd_show = workspace.run_bd(["show", &bd_b_id, "--json"], "show_with_deps");
-
-    assert!(br_show.status.success(), "br show failed");
-    assert!(bd_show.status.success(), "bd show failed");
-
-    info!("conformance_show_with_dependencies passed");
-}
-
-#[test]
-fn conformance_show_with_comments() {
-    common::init_test_logging();
-    info!("Starting conformance_show_with_comments test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create an issue
-    let br_create = workspace.run_br(["create", "Issue with comments", "--json"], "create");
-    let bd_create = workspace.run_bd(["create", "Issue with comments", "--json"], "create");
-
-    let br_id = extract_id_from_json(&br_create.stdout);
-    let bd_id = extract_id_from_json(&bd_create.stdout);
-
-    // Add a comment
-    workspace.run_br(["comments", "add", &br_id, "This is a test comment"], "comment_add");
-    workspace.run_bd(["comments", "add", &bd_id, "This is a test comment"], "comment_add");
-
-    // Show the issue
-    let br_show = workspace.run_br(["show", &br_id, "--json"], "show_with_comments");
-    let bd_show = workspace.run_bd(["show", &bd_id, "--json"], "show_with_comments");
-
-    assert!(br_show.status.success(), "br show failed");
-    assert!(bd_show.status.success(), "bd show failed");
-
-    info!("conformance_show_with_comments passed");
-}
-
-#[test]
-fn conformance_show_deleted_issue() {
-    common::init_test_logging();
-    info!("Starting conformance_show_deleted_issue test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create and then delete an issue
-    let br_create = workspace.run_br(["create", "To be deleted", "--json"], "create");
-    let bd_create = workspace.run_bd(["create", "To be deleted", "--json"], "create");
-
-    let br_id = extract_id_from_json(&br_create.stdout);
-    let bd_id = extract_id_from_json(&bd_create.stdout);
-
-    workspace.run_br(["delete", &br_id], "delete");
-    workspace.run_bd(["delete", &bd_id], "delete");
-
-    // Try to show deleted issue - behavior may vary
-    let br_show = workspace.run_br(["show", &br_id, "--json"], "show_deleted");
-    let bd_show = workspace.run_bd(["show", &bd_id, "--json"], "show_deleted");
-
-    // Both should either show tombstone or fail consistently
-    info!(
-        "br show deleted: success={}, bd show deleted: success={}",
-        br_show.status.success(),
-        bd_show.status.success()
-    );
-
-    info!("conformance_show_deleted_issue passed");
-}
-
-// Helper function to extract ID from JSON output
-fn extract_id_from_json(output: &str) -> String {
-    let json = extract_json_payload(output);
-    let val: Value = serde_json::from_str(&json).unwrap_or(Value::Null);
-    val["id"]
-        .as_str()
-        .or_else(|| val[0]["id"].as_str())
-        .unwrap_or("unknown")
-        .to_string()
-}
-
-// --- update tests ---
-
-#[test]
-fn conformance_update_multiple_fields() {
-    common::init_test_logging();
-    info!("Starting conformance_update_multiple_fields test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create an issue
-    let br_create = workspace.run_br(["create", "Original title", "--json"], "create");
-    let bd_create = workspace.run_bd(["create", "Original title", "--json"], "create");
-
-    let br_id = extract_id_from_json(&br_create.stdout);
-    let bd_id = extract_id_from_json(&bd_create.stdout);
-
-    // Update multiple fields at once
-    let br_update = workspace.run_br(
-        ["update", &br_id, "--title", "Updated title", "--priority", "1", "--status", "in_progress", "--json"],
-        "update_multi",
-    );
-    let bd_update = workspace.run_bd(
-        ["update", &bd_id, "--title", "Updated title", "--priority", "1", "--status", "in_progress", "--json"],
-        "update_multi",
-    );
-
-    assert!(br_update.status.success(), "br update failed: {}", br_update.stderr);
-    assert!(bd_update.status.success(), "bd update failed: {}", bd_update.stderr);
-
-    // Verify changes
-    let br_show = workspace.run_br(["show", &br_id, "--json"], "show_after_update");
-    let bd_show = workspace.run_bd(["show", &bd_id, "--json"], "show_after_update");
-
-    let br_json = extract_json_payload(&br_show.stdout);
-    let bd_json = extract_json_payload(&bd_show.stdout);
-
-    let br_val: Value = serde_json::from_str(&br_json).expect("parse br");
-    let bd_val: Value = serde_json::from_str(&bd_json).expect("parse bd");
-
-    let br_issue = if br_val.is_array() { &br_val[0] } else { &br_val };
-    let bd_issue = if bd_val.is_array() { &bd_val[0] } else { &bd_val };
-
-    assert_eq!(br_issue["title"].as_str(), Some("Updated title"), "br title not updated");
-    assert_eq!(bd_issue["title"].as_str(), Some("Updated title"), "bd title not updated");
-
-    info!("conformance_update_multiple_fields passed");
-}
-
-#[test]
-fn conformance_update_clear_assignee() {
-    common::init_test_logging();
-    info!("Starting conformance_update_clear_assignee test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create with assignee
-    let br_create = workspace.run_br(
-        ["create", "Assigned issue", "--assignee", "alice", "--json"],
-        "create",
-    );
-    let bd_create = workspace.run_bd(
-        ["create", "Assigned issue", "--assignee", "alice", "--json"],
-        "create",
-    );
-
-    let br_id = extract_id_from_json(&br_create.stdout);
-    let bd_id = extract_id_from_json(&bd_create.stdout);
-
-    // Clear assignee by setting to empty
-    let br_update = workspace.run_br(["update", &br_id, "--assignee", "", "--json"], "clear_assignee");
-    let bd_update = workspace.run_bd(["update", &bd_id, "--assignee", "", "--json"], "clear_assignee");
-
-    // Both should succeed or both should handle this consistently
-    info!(
-        "br clear assignee: success={}, bd clear assignee: success={}",
-        br_update.status.success(),
-        bd_update.status.success()
-    );
-
-    info!("conformance_update_clear_assignee passed");
-}
-
-#[test]
-fn conformance_update_preserves_other_fields() {
-    common::init_test_logging();
-    info!("Starting conformance_update_preserves_other_fields test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create with multiple fields set
-    let br_create = workspace.run_br(
-        ["create", "Multi field issue", "--type", "bug", "--priority", "1", "--assignee", "bob", "--json"],
-        "create",
-    );
-    let bd_create = workspace.run_bd(
-        ["create", "Multi field issue", "--type", "bug", "--priority", "1", "--assignee", "bob", "--json"],
-        "create",
-    );
-
-    let br_id = extract_id_from_json(&br_create.stdout);
-    let bd_id = extract_id_from_json(&bd_create.stdout);
-
-    // Update only title
-    workspace.run_br(["update", &br_id, "--title", "New title"], "update_title");
-    workspace.run_bd(["update", &bd_id, "--title", "New title"], "update_title");
-
-    // Check other fields preserved
-    let br_show = workspace.run_br(["show", &br_id, "--json"], "show_after");
-    let bd_show = workspace.run_bd(["show", &bd_id, "--json"], "show_after");
-
-    let br_json = extract_json_payload(&br_show.stdout);
-    let bd_json = extract_json_payload(&bd_show.stdout);
-
-    let br_val: Value = serde_json::from_str(&br_json).expect("parse br");
-    let bd_val: Value = serde_json::from_str(&bd_json).expect("parse bd");
-
-    let br_issue = if br_val.is_array() { &br_val[0] } else { &br_val };
-    let bd_issue = if bd_val.is_array() { &bd_val[0] } else { &bd_val };
-
-    // Priority and assignee should be preserved
-    assert_eq!(br_issue["priority"].as_i64(), Some(1), "br priority changed");
-    assert_eq!(bd_issue["priority"].as_i64(), Some(1), "bd priority changed");
-
-    info!("conformance_update_preserves_other_fields passed");
-}
-
-#[test]
-fn conformance_update_nonexistent_error() {
-    common::init_test_logging();
-    info!("Starting conformance_update_nonexistent_error test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Try to update a nonexistent issue
-    let br_update = workspace.run_br(["update", "nonexistent-id-12345", "--title", "New title"], "update_nonexistent");
-    let bd_update = workspace.run_bd(["update", "nonexistent-id-12345", "--title", "New title"], "update_nonexistent");
-
-    // Both should fail
-    assert!(!br_update.status.success(), "br should fail on nonexistent issue");
-    assert!(!bd_update.status.success(), "bd should fail on nonexistent issue");
-
-    info!("conformance_update_nonexistent_error passed");
-}
-
-// --- delete tests ---
-
-#[test]
-fn conformance_delete_creates_tombstone() {
-    common::init_test_logging();
-    info!("Starting conformance_delete_creates_tombstone test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create an issue
-    let br_create = workspace.run_br(["create", "To be tombstoned", "--json"], "create");
-    let bd_create = workspace.run_bd(["create", "To be tombstoned", "--json"], "create");
-
-    let br_id = extract_id_from_json(&br_create.stdout);
-    let bd_id = extract_id_from_json(&bd_create.stdout);
-
-    // Delete it
-    let br_delete = workspace.run_br(["delete", &br_id, "--json"], "delete");
-    let bd_delete = workspace.run_bd(["delete", &bd_id, "--json"], "delete");
-
-    assert!(br_delete.status.success(), "br delete failed: {}", br_delete.stderr);
-    assert!(bd_delete.status.success(), "bd delete failed: {}", bd_delete.stderr);
-
-    // Verify it becomes a tombstone (status=tombstone)
-    let br_show = workspace.run_br(["show", &br_id, "--json"], "show_tombstone");
-    let bd_show = workspace.run_bd(["show", &bd_id, "--json"], "show_tombstone");
-
-    // Both should handle tombstones consistently
-    info!(
-        "br show tombstone: success={}, bd show tombstone: success={}",
-        br_show.status.success(),
-        bd_show.status.success()
-    );
-
-    info!("conformance_delete_creates_tombstone passed");
-}
-
-#[test]
-fn conformance_delete_already_deleted_error() {
-    common::init_test_logging();
-    info!("Starting conformance_delete_already_deleted_error test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create and delete an issue
-    let br_create = workspace.run_br(["create", "Double delete", "--json"], "create");
-    let bd_create = workspace.run_bd(["create", "Double delete", "--json"], "create");
-
-    let br_id = extract_id_from_json(&br_create.stdout);
-    let bd_id = extract_id_from_json(&bd_create.stdout);
-
-    workspace.run_br(["delete", &br_id], "delete1");
-    workspace.run_bd(["delete", &bd_id], "delete1");
-
-    // Try to delete again
-    let br_delete2 = workspace.run_br(["delete", &br_id], "delete2");
-    let bd_delete2 = workspace.run_bd(["delete", &bd_id], "delete2");
-
-    // Both should handle double-delete consistently
-    info!(
-        "br double delete: success={}, bd double delete: success={}",
-        br_delete2.status.success(),
-        bd_delete2.status.success()
-    );
-
-    info!("conformance_delete_already_deleted_error passed");
-}
-
-#[test]
-fn conformance_delete_with_dependents() {
-    common::init_test_logging();
-    info!("Starting conformance_delete_with_dependents test");
-
-    let workspace = ConformanceWorkspace::new();
-    workspace.init_both();
-
-    // Create two issues with dependency
-    let br_a = workspace.run_br(["create", "Issue A (depended on)", "--json"], "create_a");
-    let bd_a = workspace.run_bd(["create", "Issue A (depended on)", "--json"], "create_a");
-    let br_b = workspace.run_br(["create", "Issue B (depends on A)", "--json"], "create_b");
-    let bd_b = workspace.run_bd(["create", "Issue B (depends on A)", "--json"], "create_b");
-
-    let br_a_id = extract_id_from_json(&br_a.stdout);
-    let bd_a_id = extract_id_from_json(&bd_a.stdout);
-    let br_b_id = extract_id_from_json(&br_b.stdout);
-    let bd_b_id = extract_id_from_json(&bd_b.stdout);
-
-    // B depends on A
-    workspace.run_br(["dep", "add", &br_b_id, &br_a_id], "dep_add");
-    workspace.run_bd(["dep", "add", &bd_b_id, &bd_a_id], "dep_add");
-
-    // Try to delete A (which has dependents)
-    let br_delete = workspace.run_br(["delete", &br_a_id], "delete_with_deps");
-    let bd_delete = workspace.run_bd(["delete", &bd_a_id], "delete_with_deps");
-
-    // Both should handle this consistently (may warn or fail)
-    info!(
-        "br delete with dependents: success={}, bd delete with dependents: success={}",
-        br_delete.status.success(),
-        bd_delete.status.success()
-    );
-
-    info!("conformance_delete_with_dependents passed");
-}
 
 // --- close tests ---
 

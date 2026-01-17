@@ -60,7 +60,7 @@ pub fn execute(args: QuickArgs, cli: &config::CliOverrides) -> Result<()> {
         storage.id_exists(candidate).unwrap_or(false)
     });
 
-    let issue = Issue {
+    let mut issue = Issue {
         id,
         title,
         description: None,
@@ -100,6 +100,9 @@ pub fn execute(args: QuickArgs, cli: &config::CliOverrides) -> Result<()> {
         dependencies: vec![],
         comments: vec![],
     };
+
+    // Compute content hash
+    issue.content_hash = Some(issue.compute_content_hash());
 
     let actor = config::resolve_actor(&layer);
     storage.create_issue(&issue, &actor)?;
