@@ -1156,7 +1156,7 @@ pub fn export_to_jsonl_with_policy(
         // It implies backing up the canonical JSONL.
         // If output_path == beads_dir.join("issues.jsonl"), we back it up.
         if output_path == beads_dir.join("issues.jsonl") {
-            history::backup_before_export(beads_dir, &config.history)?;
+            history::backup_before_export(beads_dir, &config.history, output_path)?;
         }
     }
 
@@ -2053,16 +2053,18 @@ pub fn import_from_jsonl(
     // Clear export hashes before importing new data.
     storage.clear_all_export_hashes()?;
 
-    // Track external refs to detect duplicates
+    // Phase 1: Scan and Resolve IDs
     let mut seen_external_refs: HashSet<String> = HashSet::new();
+    let mut renames: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut import_ops = Vec::new();
     let mut new_export_hashes = Vec::new();
 
-    // Process issues
     let progress = create_progress_bar(
         issues.len() as u64,
-        "Importing issues",
+        "Scanning issues",
         config.show_progress,
     );
+
     for issue in &issues {
         // Skip ephemerals during import (they shouldn't be in JSONL anyway)
         if issue.ephemeral {
@@ -2099,18 +2101,53 @@ pub fn import_from_jsonl(
         // Determine action
         let action = determine_action(&collision, &effective_issue, storage, config.force_upsert)?;
 
-        // Collect hash for export_hashes table
-        // We record the incoming hash so that if the DB matches it, we know we are synced.
-        // If DB differs (e.g. newer local version), it will be flagged as dirty/changed later.
-        // We must use the correct ID (existing ID if matched).
-        let final_id = match &collision {
+        // Determine target ID and record mapping
+        let target_id = match &collision {
             CollisionResult::Match { existing_id, .. } => existing_id.clone(),
             CollisionResult::NewIssue => effective_issue.id.clone(),
         };
-        new_export_hashes.push((final_id, computed_hash.clone()));
 
-        // Process the action
-        process_import_action(storage, &action, &effective_issue, &mut result)?;
+        if target_id != effective_issue.id {
+            renames.insert(effective_issue.id.clone(), target_id.clone());
+        }
+
+        // Collect hash for export_hashes table
+        new_export_hashes.push((target_id, computed_hash));
+        
+        import_ops.push((effective_issue, action));
+        progress.inc(1);
+    }
+    progress.finish_with_message("Scan complete");
+
+    // Phase 2: Remap Dependencies
+    if !renames.is_empty() {
+        for (issue, _) in &mut import_ops {
+            // Update issue ID if it was remapped (e.g. collision with existing issue)
+            if let Some(new_id) = renames.get(&issue.id) {
+                issue.id = new_id.clone();
+            }
+
+            // Remap dependencies to point to the resolved IDs
+            for dep in &mut issue.dependencies {
+                if let Some(new_target) = renames.get(&dep.depends_on_id) {
+                    dep.depends_on_id = new_target.clone();
+                }
+                if let Some(new_source) = renames.get(&dep.issue_id) {
+                    dep.issue_id = new_source.clone();
+                }
+            }
+        }
+    }
+
+    // Phase 3: Execute Actions
+    let progress = create_progress_bar(
+        import_ops.len() as u64,
+        "Importing issues",
+        config.show_progress,
+    );
+
+    for (issue, action) in import_ops {
+        process_import_action(storage, &action, &issue, &mut result)?;
         progress.inc(1);
     }
     progress.finish_with_message("Import complete");
@@ -2127,7 +2164,6 @@ pub fn import_from_jsonl(
     storage.set_metadata(METADATA_LAST_IMPORT_TIME, &chrono::Utc::now().to_rfc3339())?;
     let jsonl_hash = compute_jsonl_hash(input_path)?;
     storage.set_metadata(METADATA_JSONL_CONTENT_HASH, &jsonl_hash)?;
-
     Ok(result)
 }
 

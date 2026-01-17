@@ -42,15 +42,18 @@ pub struct BackupEntry {
 /// # Errors
 ///
 /// Returns an error if the backup cannot be created.
-pub fn backup_before_export(beads_dir: &Path, config: &HistoryConfig) -> Result<()> {
+pub fn backup_before_export(
+    beads_dir: &Path,
+    config: &HistoryConfig,
+    target_path: &Path,
+) -> Result<()> {
     if !config.enabled {
         return Ok(());
     }
 
     let history_dir = beads_dir.join(".br_history");
-    let current_jsonl = beads_dir.join("issues.jsonl");
 
-    if !current_jsonl.exists() {
+    if !target_path.exists() {
         return Ok(());
     }
 
@@ -59,14 +62,22 @@ pub fn backup_before_export(beads_dir: &Path, config: &HistoryConfig) -> Result<
         fs::create_dir_all(&history_dir).map_err(BeadsError::Io)?;
     }
 
+    // Determine backup filename based on target filename
+    let file_stem = target_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("issues");
+
     // Create timestamped backup
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-    let backup_name = format!("issues.{timestamp}.jsonl");
+    let backup_name = format!("{file_stem}.{timestamp}.jsonl");
     let backup_path = history_dir.join(backup_name);
 
     // Check if the content is identical to the most recent backup (deduplication)
-    if let Some(latest) = get_latest_backup(&history_dir)? {
-        if files_are_identical(&current_jsonl, &latest.path)? {
+    // We only check against backups that match the target's stem to avoid false positives
+    // across different files, though collisions are unlikely with timestamps.
+    if let Some(latest) = get_latest_backup(&history_dir, Some(file_stem))? {
+        if files_are_identical(target_path, &latest.path)? {
             tracing::debug!(
                 "Skipping backup: identical to latest {}",
                 latest.path.display()
@@ -75,7 +86,7 @@ pub fn backup_before_export(beads_dir: &Path, config: &HistoryConfig) -> Result<
         }
     }
 
-    fs::copy(&current_jsonl, &backup_path).map_err(BeadsError::Io)?;
+    fs::copy(target_path, &backup_path).map_err(BeadsError::Io)?;
     tracing::debug!("Created backup: {}", backup_path.display());
 
     // Rotate history
@@ -138,29 +149,44 @@ pub fn list_backups(history_dir: &Path) -> Result<Vec<BackupEntry>> {
 
         if path.is_file() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with("issues.")
-                    && Path::new(name)
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("jsonl"))
+                if Path::new(name)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("jsonl"))
                 {
-                    // Parse timestamp from filename: issues.YYYYMMDD_HHMMSS.jsonl
-                    // Expected format: issues.20230101_120000.jsonl
-                    let timestamp = if name.len() >= 22 {
-                        let ts_str = &name[7..22]; // "20230101_120000"
-                        match NaiveDateTime::parse_from_str(ts_str, "%Y%m%d_%H%M%S") {
-                            Ok(dt) => Utc.from_utc_datetime(&dt),
-                            Err(_) => continue, // Strictly require valid timestamp
-                        }
-                    } else {
-                        continue; // Skip files that don't match length requirement
-                    };
-
-                    if let Ok(metadata) = fs::metadata(&path) {
-                        backups.push(BackupEntry {
-                            path,
-                            timestamp,
-                            size: metadata.len(),
-                        });
+                    // Parse timestamp from filename: <stem>.YYYYMMDD_HHMMSS.jsonl
+                    // We look for the pattern .YYYYMMDD_HHMMSS. at the end of the stem
+                    // name format: stem.timestamp.jsonl
+                    // timestamp length: 15 chars
+                    // .jsonl length: 6 chars
+                    // minimum length: 1 (stem) + 1 (.) + 15 (ts) + 6 (.jsonl) = 23 chars?
+                    // actually stem can be 1 char.
+                    
+                    // simpler: split by dot, verify second to last part is timestamp
+                    // This handles my.custom.file.YYYYMMDD...jsonl correctly if we assume
+                    // the timestamp is always the second to last component.
+                    
+                    let parts: Vec<&str> = name.split('.').collect();
+                    if parts.len() < 3 {
+                        continue;
+                    }
+                    
+                    let ts_str = parts[parts.len() - 2];
+                    if ts_str.len() != 15 {
+                        continue;
+                    }
+                    
+                    match NaiveDateTime::parse_from_str(ts_str, "%Y%m%d_%H%M%S") {
+                        Ok(dt) => {
+                             let timestamp = Utc.from_utc_datetime(&dt);
+                             if let Ok(metadata) = fs::metadata(&path) {
+                                backups.push(BackupEntry {
+                                    path,
+                                    timestamp,
+                                    size: metadata.len(),
+                                });
+                            }
+                        },
+                        Err(_) => continue,
                     }
                 }
             }
@@ -173,9 +199,18 @@ pub fn list_backups(history_dir: &Path) -> Result<Vec<BackupEntry>> {
     Ok(backups)
 }
 
-fn get_latest_backup(history_dir: &Path) -> Result<Option<BackupEntry>> {
+fn get_latest_backup(history_dir: &Path, filter_stem: Option<&str>) -> Result<Option<BackupEntry>> {
     let backups = list_backups(history_dir)?;
-    Ok(backups.into_iter().next())
+    
+    if let Some(stem) = filter_stem {
+         Ok(backups.into_iter().find(|b| {
+             b.path.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with(stem))
+         }))
+    } else {
+        Ok(backups.into_iter().next())
+    }
 }
 
 /// Compare two files by content hash.
@@ -346,10 +381,10 @@ mod tests {
         let config = HistoryConfig::default();
 
         // First backup
-        backup_before_export(&beads_dir, &config).unwrap();
+        backup_before_export(&beads_dir, &config, &jsonl_path).unwrap();
 
         // Second backup (same content) - should be skipped
-        backup_before_export(&beads_dir, &config).unwrap();
+        backup_before_export(&beads_dir, &config, &jsonl_path).unwrap();
 
         let backups = list_backups(&history_dir).unwrap();
         assert_eq!(backups.len(), 1);
