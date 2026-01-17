@@ -2,9 +2,12 @@ mod common;
 
 use common::cli::{BrWorkspace, extract_json_payload, run_br};
 use serde_json::Value;
+use tracing::info;
 
 #[test]
 fn test_create_json_output_includes_labels_and_deps() {
+    common::init_test_logging();
+    info!("test_create_json_output_includes_labels_and_deps: start");
     let workspace = BrWorkspace::new();
 
     // Init
@@ -58,4 +61,5 @@ fn test_create_json_output_includes_labels_and_deps() {
             .any(|d| d["depends_on_id"].as_str() == Some(blocker_id)),
         "Dependencies should contain blocker ID"
     );
+    info!("test_create_json_output_includes_labels_and_deps: done");
 }
