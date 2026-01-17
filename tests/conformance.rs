@@ -10581,6 +10581,29 @@ fn conformance_q_creates_issue() {
     info!("conformance_q_creates_issue passed");
 }
 
+#[test]
+fn conformance_q_error_no_title() {
+    common::init_test_logging();
+    info!("Starting conformance_q_error_no_title test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_q = workspace.run_br(["q"], "q_no_title");
+    let bd_q = workspace.run_bd(["q"], "q_no_title");
+
+    assert!(
+        !br_q.status.success(),
+        "br q should fail without title"
+    );
+    assert!(
+        !bd_q.status.success(),
+        "bd q should fail without title"
+    );
+
+    info!("conformance_q_error_no_title passed");
+}
+
 // ============================================================================
 // LINT COMMAND TESTS
 // ============================================================================
