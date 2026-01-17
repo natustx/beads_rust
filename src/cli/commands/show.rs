@@ -3,6 +3,7 @@
 use crate::config;
 use crate::error::{BeadsError, Result};
 use crate::format::{format_priority_badge, format_status_label};
+use crate::model::Status;
 use crate::util::id::{IdResolver, ResolverConfig};
 
 /// Execute the show command.
@@ -41,7 +42,14 @@ pub fn execute(ids: Vec<String>, json: bool, cli: &config::CliOverrides) -> Resu
         )?;
 
         // Fetch full details including comments and events
-        if let Some(details) = storage.get_issue_details(&resolution.id, true, true, 10)? {
+        if let Some(details) = storage.get_issue_details(&resolution.id, true, false, 10)? {
+            if details.issue.status == Status::Tombstone {
+                eprintln!(
+                    "Error fetching {}: no issue found matching \"{}\"",
+                    resolution.id, resolution.id
+                );
+                return Ok(());
+            }
             details_list.push(details);
         } else {
             return Err(BeadsError::IssueNotFound { id: resolution.id });

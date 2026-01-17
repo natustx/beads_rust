@@ -15,11 +15,17 @@ pub struct IssueWithCounts {
 pub struct IssueDetails {
     #[serde(flatten)]
     pub issue: Issue,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<IssueWithDependencyMetadata>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependents: Vec<IssueWithDependencyMetadata>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<Comment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<Event>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
 }
 
