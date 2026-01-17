@@ -162,10 +162,12 @@ impl SqliteStorage {
         // Track if we need to rebuild cache
         let needs_cache_rebuild = ctx.invalidate_blocked_cache;
 
-        tx.commit()?;
+        // Rebuild blocked cache inside the transaction if needed
+        if needs_cache_rebuild {
+            Self::rebuild_blocked_cache_impl(&tx)?;
+        }
 
-        // Rebuild blocked cache after transaction commits (if needed)
-        self.rebuild_blocked_cache(needs_cache_rebuild)?;
+        tx.commit()?;
 
         Ok(result)
     }
@@ -894,14 +896,20 @@ impl SqliteStorage {
     /// Returns an error if the database operation fails.
     #[allow(clippy::too_many_lines)]
     pub fn rebuild_blocked_cache(&mut self, force_rebuild: bool) -> Result<usize> {
-        const MAX_DEPTH: i32 = 50;
         if !force_rebuild {
             return Ok(0);
         }
         let tx = self.conn.transaction()?;
+        let count = Self::rebuild_blocked_cache_impl(&tx)?;
+        tx.commit()?;
+        Ok(count)
+    }
+
+    fn rebuild_blocked_cache_impl(conn: &Connection) -> Result<usize> {
+        const MAX_DEPTH: i32 = 50;
 
         // Clear existing cache
-        tx.execute("DELETE FROM blocked_issues_cache", [])?;
+        conn.execute("DELETE FROM blocked_issues_cache", [])?;
 
         // Find all issues that are blocked by a dependency
         // An issue is blocked if:
@@ -911,7 +919,7 @@ impl SqliteStorage {
         // For conditional-blocks, we also need to check if the blocker closed with failure
         // but for simplicity in this initial implementation, we treat it like blocks.
         let blocked_issues: Vec<(String, String)> = {
-            let mut stmt = tx.prepare(
+            let mut stmt = conn.prepare(
                 r"SELECT DISTINCT d.issue_id,
                          COALESCE(GROUP_CONCAT(d.depends_on_id || ':' || COALESCE(i.status, 'unknown'), ','), '')
                   FROM dependencies d
@@ -936,7 +944,7 @@ impl SqliteStorage {
         // Insert blocked issues into cache
         let mut count = 0;
         {
-            let mut insert_stmt = tx.prepare(
+            let mut insert_stmt = conn.prepare(
                 "INSERT INTO blocked_issues_cache (issue_id, blocked_by_json) VALUES (?, ?)",
             )?;
 
@@ -978,7 +986,7 @@ impl SqliteStorage {
 
             // Find children of blocked issues that aren't already in cache
             let newly_blocked: Vec<(String, String)> = {
-                let mut stmt = tx.prepare(
+                let mut stmt = conn.prepare(
                     r"SELECT DISTINCT d.issue_id, d.depends_on_id
                       FROM dependencies d
                       INNER JOIN blocked_issues_cache bc ON d.depends_on_id = bc.issue_id
@@ -1004,7 +1012,7 @@ impl SqliteStorage {
             }
 
             {
-                let mut insert_stmt = tx.prepare(
+                let mut insert_stmt = conn.prepare(
                     "INSERT INTO blocked_issues_cache (issue_id, blocked_by_json) VALUES (?, ?)",
                 )?;
 
@@ -1023,8 +1031,6 @@ impl SqliteStorage {
 
             depth += 1;
         }
-
-        tx.commit()?;
 
         tracing::debug!(blocked_count = count, "Rebuilt blocked issues cache");
         Ok(count)
@@ -3225,7 +3231,7 @@ mod tests {
         );
         let pinned = make_issue("bd-ready-4", "Pinned", Status::Open, 2, None, base, None);
         let ephemeral = make_issue("bd-ready-5", "Ephemeral", Status::Open, 2, None, base, None);
-        let wisp = make_issue("bd-wisp-6", "Wisp", Status::Open, 2, None, base, None);
+        let wisp = make_issue("bd-ready-6", "Wisp", Status::Open, 2, None, base, None);
 
         for issue in [
             ready,
@@ -3270,7 +3276,7 @@ mod tests {
         assert!(!ids.contains(&"bd-ready-2"));
         assert!(!ids.contains(&"bd-ready-4"));
         assert!(!ids.contains(&"bd-ready-5"));
-        assert!(!ids.contains(&"bd-wisp-6"));
+        assert!(!ids.contains(&"bd-ready-6"));
     }
 
     #[test]

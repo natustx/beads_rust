@@ -359,7 +359,7 @@ pub fn get_events(conn: &Connection, issue_id: &str, limit: usize) -> Result<Vec
             SELECT id, issue_id, event_type, actor, old_value, new_value, comment, created_at
             FROM events
             WHERE issue_id = ?1
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT {limit}
             "
         )
@@ -368,7 +368,7 @@ pub fn get_events(conn: &Connection, issue_id: &str, limit: usize) -> Result<Vec
             SELECT id, issue_id, event_type, actor, old_value, new_value, comment, created_at
             FROM events
             WHERE issue_id = ?1
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             "
         .to_string()
     };
@@ -421,7 +421,7 @@ pub fn get_all_events(conn: &Connection, limit: usize) -> Result<Vec<Event>> {
             r"
             SELECT id, issue_id, event_type, actor, old_value, new_value, comment, created_at
             FROM events
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT {limit}
             "
         )
@@ -429,7 +429,7 @@ pub fn get_all_events(conn: &Connection, limit: usize) -> Result<Vec<Event>> {
         r"
             SELECT id, issue_id, event_type, actor, old_value, new_value, comment, created_at
             FROM events
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             "
         .to_string()
     };
