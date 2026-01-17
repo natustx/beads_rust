@@ -695,9 +695,11 @@ impl SqliteStorage {
                     let _ = write!(sql, " ORDER BY priority {order}, created_at DESC");
                 }
                 "created_at" | "created" => {
+                    let order = if filters.reverse { "ASC" } else { "DESC" };
                     let _ = write!(sql, " ORDER BY created_at {order}");
                 }
                 "updated_at" | "updated" => {
+                    let order = if filters.reverse { "ASC" } else { "DESC" };
                     let _ = write!(sql, " ORDER BY updated_at {order}");
                 }
                 "title" => {
