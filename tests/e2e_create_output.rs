@@ -1,53 +1,41 @@
-use assert_cmd::Command;
+mod common;
+
+use common::cli::{BrWorkspace, extract_json_payload, run_br};
+use serde_json::Value;
 
 #[test]
 fn test_create_json_output_includes_labels_and_deps() {
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path();
+    let workspace = BrWorkspace::new();
 
     // Init
-    Command::new(assert_cmd::cargo::cargo_bin!("br"))
-        .current_dir(path)
-        .arg("init")
-        .assert()
-        .success();
+    let init = run_br(&workspace, ["init"], "init");
+    assert!(init.status.success(), "init failed: {}", init.stderr);
 
     // Create blocking issue first
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("br"))
-        .current_dir(path)
-        .arg("create")
-        .arg("Blocker")
-        .arg("--json")
-        .output()
-        .expect("create blocker");
-
+    let blocker = run_br(&workspace, ["create", "Blocker", "--json"], "create_blocker");
     assert!(
-        output.status.success(),
-        "Failed to create blocking issue: {output:?}"
+        blocker.status.success(),
+        "Failed to create blocking issue: {}",
+        blocker.stderr
     );
 
-    let blocker_json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let blocker_json: Value =
+        serde_json::from_str(&extract_json_payload(&blocker.stdout)).unwrap();
     let blocker_id = blocker_json["id"].as_str().unwrap();
 
     // Create issue with label and dep
-    let output = Command::new(assert_cmd::cargo::cargo_bin!("br"))
-        .current_dir(path)
-        .arg("create")
-        .arg("My Issue")
-        .arg("--labels")
-        .arg("bug")
-        .arg("--deps")
-        .arg(blocker_id)
-        .arg("--json")
-        .output()
-        .expect("Failed to run create issue");
-
+    let issue = run_br(
+        &workspace,
+        ["create", "My Issue", "--labels", "bug", "--deps", blocker_id, "--json"],
+        "create_issue",
+    );
     assert!(
-        output.status.success(),
-        "Failed to create issue with label and dep: {output:?}"
+        issue.status.success(),
+        "Failed to create issue with label and dep: {}",
+        issue.stderr
     );
 
-    let issue_json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let issue_json: Value = serde_json::from_str(&extract_json_payload(&issue.stdout)).unwrap();
     // Verify fields
     let labels = issue_json["labels"]
         .as_array()

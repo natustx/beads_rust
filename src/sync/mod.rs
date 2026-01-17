@@ -3185,17 +3185,19 @@ mod tests {
         let result = detect_collision(&incoming, &storage, &hash).unwrap();
 
         // Should match by external_ref (phase 1)
-        match result {
-            CollisionResult::Match {
-                existing_id,
-                match_type,
-                phase,
-            } => {
-                assert_eq!(existing_id, "test-001");
-                assert_eq!(match_type, MatchType::ExternalRef);
-                assert_eq!(phase, 1);
-            }
-            CollisionResult::NewIssue => assert!(false, "Expected external_ref match"),
+        assert!(
+            matches!(result, CollisionResult::Match { .. }),
+            "Expected external_ref match"
+        );
+        if let CollisionResult::Match {
+            existing_id,
+            match_type,
+            phase,
+        } = result
+        {
+            assert_eq!(existing_id, "test-001");
+            assert_eq!(match_type, MatchType::ExternalRef);
+            assert_eq!(phase, 1);
         }
     }
 
@@ -3382,17 +3384,19 @@ mod tests {
         let computed_hash = crate::util::content_hash(&incoming);
 
         let collision = detect_collision(&incoming, &storage, &computed_hash).unwrap();
-        match collision {
-            CollisionResult::Match {
-                existing_id,
-                match_type,
-                phase,
-            } => {
-                assert_eq!(existing_id, "bd-ext");
-                assert_eq!(match_type, MatchType::ExternalRef);
-                assert_eq!(phase, 1);
-            }
-            CollisionResult::NewIssue => assert!(false, "expected match"),
+        assert!(
+            matches!(collision, CollisionResult::Match { .. }),
+            "expected match"
+        );
+        if let CollisionResult::Match {
+            existing_id,
+            match_type,
+            phase,
+        } = collision
+        {
+            assert_eq!(existing_id, "bd-ext");
+            assert_eq!(match_type, MatchType::ExternalRef);
+            assert_eq!(phase, 1);
         }
     }
 
@@ -3412,17 +3416,19 @@ mod tests {
         let computed_hash = crate::util::content_hash(&incoming);
 
         let collision = detect_collision(&incoming, &storage, &computed_hash).unwrap();
-        match collision {
-            CollisionResult::Match {
-                existing_id,
-                match_type,
-                phase,
-            } => {
-                assert_eq!(existing_id, "bd-hash");
-                assert_eq!(match_type, MatchType::ContentHash);
-                assert_eq!(phase, 2);
-            }
-            CollisionResult::NewIssue => assert!(false, "expected match"),
+        assert!(
+            matches!(collision, CollisionResult::Match { .. }),
+            "expected match"
+        );
+        if let CollisionResult::Match {
+            existing_id,
+            match_type,
+            phase,
+        } = collision
+        {
+            assert_eq!(existing_id, "bd-hash");
+            assert_eq!(match_type, MatchType::ContentHash);
+            assert_eq!(phase, 2);
         }
     }
 
@@ -3438,17 +3444,19 @@ mod tests {
         let computed_hash = crate::util::content_hash(&incoming);
         let collision = detect_collision(&incoming, &storage, &computed_hash).unwrap();
 
-        match collision {
-            CollisionResult::Match {
-                existing_id,
-                match_type,
-                phase,
-            } => {
-                assert_eq!(existing_id, "bd-1");
-                assert_eq!(match_type, MatchType::Id);
-                assert_eq!(phase, 3);
-            }
-            CollisionResult::NewIssue => assert!(false, "expected match"),
+        assert!(
+            matches!(collision, CollisionResult::Match { .. }),
+            "expected match"
+        );
+        if let CollisionResult::Match {
+            existing_id,
+            match_type,
+            phase,
+        } = collision
+        {
+            assert_eq!(existing_id, "bd-1");
+            assert_eq!(match_type, MatchType::Id);
+            assert_eq!(phase, 3);
         }
     }
 
@@ -3466,11 +3474,12 @@ mod tests {
             phase: 3,
         };
         let action = determine_action(&collision, &incoming, &storage, false).unwrap();
-        match action {
-            CollisionAction::Skip { reason } => {
-                assert!(reason.contains("Tombstone protection"));
-            }
-            _ => assert!(false, "expected tombstone skip"),
+        assert!(
+            matches!(action, CollisionAction::Skip { .. }),
+            "expected tombstone skip"
+        );
+        if let CollisionAction::Skip { reason } = action {
+            assert!(reason.contains("Tombstone protection"));
         }
     }
 
@@ -3488,23 +3497,29 @@ mod tests {
 
         let newer = make_issue_at("bd-1", "Incoming", fixed_time(200));
         let action = determine_action(&collision, &newer, &storage, false).unwrap();
-        match action {
-            CollisionAction::Update { .. } => {}
-            _ => assert!(false, "expected update action"),
-        }
+        assert!(
+            matches!(action, CollisionAction::Update { .. }),
+            "expected update action"
+        );
 
         let equal = make_issue_at("bd-1", "Incoming", fixed_time(100));
         let action = determine_action(&collision, &equal, &storage, false).unwrap();
-        match action {
-            CollisionAction::Skip { reason } => assert!(reason.contains("Equal timestamps")),
-            _ => assert!(false, "expected equal timestamp skip"),
+        assert!(
+            matches!(action, CollisionAction::Skip { .. }),
+            "expected equal timestamp skip"
+        );
+        if let CollisionAction::Skip { reason } = action {
+            assert!(reason.contains("Equal timestamps"));
         }
 
         let older = make_issue_at("bd-1", "Incoming", fixed_time(50));
         let action = determine_action(&collision, &older, &storage, false).unwrap();
-        match action {
-            CollisionAction::Skip { reason } => assert!(reason.contains("Existing is newer")),
-            _ => assert!(false, "expected older timestamp skip"),
+        assert!(
+            matches!(action, CollisionAction::Skip { .. }),
+            "expected older timestamp skip"
+        );
+        if let CollisionAction::Skip { reason } = action {
+            assert!(reason.contains("Existing is newer"));
         }
     }
 

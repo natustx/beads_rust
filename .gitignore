@@ -27,3 +27,7 @@ Thumbs.db
 
 # Coverage reports
 /coverage/
+
+# Local agent/session artifacts
+SESSION_STATUS.md
+a.out
