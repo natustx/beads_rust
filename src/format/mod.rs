@@ -1,9 +1,9 @@
 //! Output formatting for `beads_rust`.
 //!
-//! Supports both human-readable text output and machine-parseable JSON.
+//! Supports human-readable text output, machine-parseable JSON, and CSV export.
 //! Robot mode sends clean JSON to stdout with diagnostics to stderr.
 //!
-//! # JSON Output Types
+//! # Output Types
 //!
 //! These types match the classic bd JSON schemas for CLI compatibility:
 //! - [`IssueWithCounts`] - Issue with dependency/dependent counts (list/search)
@@ -11,7 +11,14 @@
 //! - [`BlockedIssue`] - Issue with blocking info (blocked)
 //! - [`TreeNode`] - Issue in dependency tree (dep tree)
 //! - [`Statistics`] - Aggregate stats (stats/status)
+//!
+//! # CSV Output
+//!
+//! The [`csv`] module provides CSV formatting with:
+//! - Configurable field selection via `--fields`
+//! - Proper escaping of commas, quotes, and newlines
 
+pub mod csv;
 mod output;
 mod text;
 
