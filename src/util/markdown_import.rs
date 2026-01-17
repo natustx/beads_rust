@@ -360,30 +360,30 @@ And this one too
 
     #[test]
     fn test_labels_comma_separated() {
-        let content = r#"## Test Issue
+        let content = r"## Test Issue
 ### Labels
 bug, urgent, frontend
-"#;
+";
         let issues = parse_markdown_content(content).unwrap();
         assert_eq!(issues[0].labels, vec!["bug", "urgent", "frontend"]);
     }
 
     #[test]
     fn test_labels_whitespace_separated() {
-        let content = r#"## Test Issue
+        let content = r"## Test Issue
 ### Labels
 bug urgent frontend
-"#;
+";
         let issues = parse_markdown_content(content).unwrap();
         assert_eq!(issues[0].labels, vec!["bug", "urgent", "frontend"]);
     }
 
     #[test]
     fn test_dependencies_parsing() {
-        let content = r#"## Test Issue
+        let content = r"## Test Issue
 ### Dependencies
 blocks:bd-123, bd-456, related:bd-789
-"#;
+";
         let issues = parse_markdown_content(content).unwrap();
         assert_eq!(
             issues[0].dependencies,
@@ -393,11 +393,11 @@ blocks:bd-123, bd-456, related:bd-789
 
     #[test]
     fn test_acceptance_criteria_alias() {
-        let content = r#"## Test Issue
+        let content = r"## Test Issue
 ### Acceptance
 - [ ] First criterion
 - [ ] Second criterion
-"#;
+";
         let issues = parse_markdown_content(content).unwrap();
         assert!(issues[0].acceptance_criteria.is_some());
         assert!(
@@ -411,13 +411,13 @@ blocks:bd-123, bd-456, related:bd-789
 
     #[test]
     fn test_unknown_sections_ignored() {
-        let content = r#"## Test Issue
+        let content = r"## Test Issue
 ### Unknown Section
 This content should be ignored.
 
 ### Description
 This is the actual description.
-"#;
+";
         let issues = parse_markdown_content(content).unwrap();
         assert_eq!(
             issues[0].description,
@@ -455,11 +455,11 @@ This is the actual description.
 
     #[test]
     fn test_design_section() {
-        let content = r#"## Test Issue
+        let content = r"## Test Issue
 ### Design
 Design notes here.
 Multi-line content.
-"#;
+";
         let issues = parse_markdown_content(content).unwrap();
         assert!(issues[0].design.is_some());
         assert!(issues[0].design.as_ref().unwrap().contains("Design notes"));
@@ -467,7 +467,7 @@ Multi-line content.
 
     #[test]
     fn test_case_insensitive_sections() {
-        let content = r#"## Test Issue
+        let content = r"## Test Issue
 ### PRIORITY
 1
 
@@ -476,7 +476,7 @@ Test desc
 
 ### TYPE
 task
-"#;
+";
         let issues = parse_markdown_content(content).unwrap();
         assert_eq!(issues[0].priority, Some("1".to_string()));
         assert_eq!(issues[0].description, Some("Test desc".to_string()));
@@ -485,12 +485,12 @@ task
 
     #[test]
     fn test_explicit_description_overrides_implicit() {
-        let content = r#"## Test Issue
+        let content = r"## Test Issue
 Implicit description line
 
 ### Description
 Explicit description content
-"#;
+";
         let issues = parse_markdown_content(content).unwrap();
         // Explicit ### Description section should be used
         assert_eq!(
