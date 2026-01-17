@@ -1,11 +1,12 @@
 //! List command implementation.
 //!
 //! Primary discovery interface with classic filter semantics and
-//! `IssueWithCounts` JSON output.
+//! `IssueWithCounts` JSON output. Supports text, JSON, and CSV formats.
 
-use crate::cli::ListArgs;
+use crate::cli::{ListArgs, OutputFormat};
 use crate::config;
 use crate::error::{BeadsError, Result};
+use crate::format::csv;
 use crate::format::{IssueWithCounts, TextFormatOptions, format_issue_line_with, terminal_width};
 use crate::model::{Issue, IssueType, Priority, Status};
 use crate::storage::{ListFilters, SqliteStorage};
@@ -66,31 +67,48 @@ pub fn execute(args: &ListArgs, json: bool, cli: &config::CliOverrides) -> Resul
         }
     }
 
-    // Output
-    if json {
-        // Convert to IssueWithCounts only for JSON
-        let issues_with_counts: Vec<IssueWithCounts> = issues
-            .into_iter()
-            .map(|issue| {
-                let dependency_count = storage.count_dependencies(&issue.id).unwrap_or(0);
-                let dependent_count = storage.count_dependents(&issue.id).unwrap_or(0);
-                IssueWithCounts {
-                    issue,
-                    dependency_count,
-                    dependent_count,
-                }
-            })
-            .collect();
-        let json_output = serde_json::to_string_pretty(&issues_with_counts)?;
-        println!("{json_output}");
-    } else if issues.is_empty() {
-        println!("No issues found.");
+    // Determine output format: --json flag overrides --format
+    let output_format = if json {
+        OutputFormat::Json
     } else {
-        for issue in &issues {
-            let line = format_issue_line_with(issue, format_options);
-            println!("{line}");
+        args.format
+    };
+
+    // Output
+    match output_format {
+        OutputFormat::Json => {
+            // Convert to IssueWithCounts only for JSON
+            let issues_with_counts: Vec<IssueWithCounts> = issues
+                .into_iter()
+                .map(|issue| {
+                    let dependency_count = storage.count_dependencies(&issue.id).unwrap_or(0);
+                    let dependent_count = storage.count_dependents(&issue.id).unwrap_or(0);
+                    IssueWithCounts {
+                        issue,
+                        dependency_count,
+                        dependent_count,
+                    }
+                })
+                .collect();
+            let json_output = serde_json::to_string_pretty(&issues_with_counts)?;
+            println!("{json_output}");
         }
-        println!("\n{} issue(s)", issues.len());
+        OutputFormat::Csv => {
+            let fields = csv::parse_fields(args.fields.as_deref());
+            let csv_output = csv::format_csv(&issues, &fields);
+            print!("{csv_output}");
+        }
+        OutputFormat::Text => {
+            if issues.is_empty() {
+                println!("No issues found.");
+            } else {
+                for issue in &issues {
+                    let line = format_issue_line_with(issue, format_options);
+                    println!("{line}");
+                }
+                println!("\n{} issue(s)", issues.len());
+            }
+        }
     }
 
     Ok(())
