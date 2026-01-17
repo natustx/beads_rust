@@ -167,7 +167,6 @@ pub fn execute_defer(args: &DeferArgs, json: bool, cli: &config::CliOverrides) -
     }
 
     storage_ctx.flush_no_db_if_dirty()?;
-    storage_ctx.flush_no_db_if_dirty()?;
     Ok(())
 }
 
