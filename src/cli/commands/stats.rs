@@ -6,68 +6,15 @@
 use crate::cli::StatsArgs;
 use crate::config;
 use crate::error::Result;
+use crate::format::{Breakdown, BreakdownEntry, RecentActivity, Statistics, StatsSummary};
 use crate::model::{IssueType, Status};
 use crate::storage::{ListFilters, SqliteStorage};
 use chrono::Utc;
-use serde::Serialize;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use tracing::{debug, info};
-
-/// Summary statistics for the project.
-#[derive(Serialize, Debug)]
-pub struct StatsSummary {
-    pub total_issues: usize,
-    pub open_issues: usize,
-    pub in_progress_issues: usize,
-    pub closed_issues: usize,
-    pub blocked_issues: usize,
-    pub deferred_issues: usize,
-    pub ready_issues: usize,
-    pub tombstone_issues: usize,
-    pub pinned_issues: usize,
-    pub epics_eligible_for_closure: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub average_lead_time_hours: Option<f64>,
-}
-
-/// Breakdown statistics by a dimension.
-#[derive(Serialize, Debug)]
-pub struct Breakdown {
-    pub dimension: String,
-    pub counts: Vec<BreakdownEntry>,
-}
-
-/// A single entry in a breakdown.
-#[derive(Serialize, Debug)]
-pub struct BreakdownEntry {
-    pub key: String,
-    pub count: usize,
-}
-
-/// Recent activity statistics from git history.
-#[derive(Serialize, Debug)]
-pub struct RecentActivity {
-    pub hours_tracked: u32,
-    pub commit_count: usize,
-    pub issues_created: usize,
-    pub issues_closed: usize,
-    pub issues_updated: usize,
-    pub issues_reopened: usize,
-    pub total_changes: usize,
-}
-
-/// Complete stats output structure.
-#[derive(Serialize, Debug)]
-pub struct StatsOutput {
-    pub summary: StatsSummary,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub breakdowns: Vec<Breakdown>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub recent_activity: Option<RecentActivity>,
-}
 
 /// Execute the stats command.
 ///
@@ -118,7 +65,7 @@ pub fn execute(args: &StatsArgs, json: bool, cli: &config::CliOverrides) -> Resu
         compute_recent_activity(&beads_dir, args.activity_hours)
     };
 
-    let output = StatsOutput {
+    let output = Statistics {
         summary,
         breakdowns,
         recent_activity,
@@ -429,7 +376,7 @@ fn compute_recent_activity(beads_dir: &Path, hours: u32) -> Option<RecentActivit
 }
 
 /// Print text output for stats.
-fn print_text_output(output: &StatsOutput) {
+fn print_text_output(output: &Statistics) {
     println!("Project Statistics");
     println!("==================\n");
 

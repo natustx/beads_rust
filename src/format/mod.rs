@@ -23,8 +23,8 @@ mod output;
 mod text;
 
 pub use output::{
-    BlockedIssue, IssueDetails, IssueWithCounts, IssueWithDependencyMetadata, StaleIssue,
-    Statistics, TreeNode,
+    BlockedIssue, Breakdown, BreakdownEntry, IssueDetails, IssueWithCounts,
+    IssueWithDependencyMetadata, RecentActivity, StaleIssue, Statistics, StatsSummary, TreeNode,
 };
 pub use text::{
     TextFormatOptions, format_issue_line, format_issue_line_with, format_priority,

@@ -85,11 +85,57 @@ pub struct TreeNode {
     pub truncated: bool,
 }
 
-/// Aggregate statistics.
+/// Summary statistics for the project.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatsSummary {
+    pub total_issues: usize,
+    pub open_issues: usize,
+    pub in_progress_issues: usize,
+    pub closed_issues: usize,
+    pub blocked_issues: usize,
+    pub deferred_issues: usize,
+    pub ready_issues: usize,
+    pub tombstone_issues: usize,
+    pub pinned_issues: usize,
+    pub epics_eligible_for_closure: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub average_lead_time_hours: Option<f64>,
+}
+
+/// Breakdown statistics by a dimension.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Breakdown {
+    pub dimension: String,
+    pub counts: Vec<BreakdownEntry>,
+}
+
+/// A single entry in a breakdown.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BreakdownEntry {
+    pub key: String,
+    pub count: usize,
+}
+
+/// Recent activity statistics from git history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentActivity {
+    pub hours_tracked: u32,
+    pub commit_count: usize,
+    pub issues_created: usize,
+    pub issues_closed: usize,
+    pub issues_updated: usize,
+    pub issues_reopened: usize,
+    pub total_changes: usize,
+}
+
+/// Aggregate statistics output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Statistics {
-    // TODO: Define stats structure
-    pub total: usize,
+    pub summary: StatsSummary,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub breakdowns: Vec<Breakdown>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recent_activity: Option<RecentActivity>,
 }
 
 #[cfg(test)]

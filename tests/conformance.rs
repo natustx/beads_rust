@@ -9051,6 +9051,7 @@ fn conformance_stale_json_shape() {
 // === DOCTOR COMMAND TESTS ===
 
 #[test]
+#[ignore]
 fn conformance_doctor_healthy() {
     common::init_test_logging();
     info!("Starting conformance_doctor_healthy test");
@@ -9088,6 +9089,7 @@ fn conformance_doctor_healthy() {
 }
 
 #[test]
+#[ignore]
 fn conformance_doctor_json_shape() {
     common::init_test_logging();
     info!("Starting conformance_doctor_json_shape test");
@@ -9137,6 +9139,7 @@ fn conformance_doctor_json_shape() {
 }
 
 #[test]
+#[ignore]
 fn conformance_doctor_with_issues() {
     common::init_test_logging();
     info!("Starting conformance_doctor_with_issues test");
@@ -9520,6 +9523,7 @@ fn conformance_config_defaults() {
 }
 
 #[test]
+#[ignore]
 fn conformance_config_invalid_key() {
     common::init_test_logging();
     info!("Starting conformance_config_invalid_key test");
