@@ -6,6 +6,7 @@ use crate::error::{BeadsError, Result};
 use crate::storage::SqliteStorage;
 use crate::util::id::{IdResolver, ResolverConfig, find_matching_ids};
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 
@@ -139,6 +140,11 @@ fn resolve_issue_id(
 
 fn read_comment_text(args: &CommentAddArgs) -> Result<String> {
     if let Some(path) = &args.file {
+        if path.as_os_str() == "-" {
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            return Ok(buffer);
+        }
         return Ok(fs::read_to_string(path)?);
     }
     if let Some(message) = &args.message {
