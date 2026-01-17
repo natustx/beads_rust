@@ -12,9 +12,11 @@ use crate::sync::{
     METADATA_JSONL_CONTENT_HASH, METADATA_LAST_EXPORT_TIME, METADATA_LAST_IMPORT_TIME, OrphanMode,
     compute_jsonl_hash, count_issues_in_jsonl, export_to_jsonl_with_policy, finalize_export,
     get_issue_ids_from_jsonl, import_from_jsonl, require_safe_sync_overwrite_path,
+    ConflictResolution, MergeContext, load_base_snapshot, save_base_snapshot, three_way_merge,
+    read_issues_from_jsonl,
 };
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::fs;
 use std::io::IsTerminal;
 use std::path::{Component, Path, PathBuf};
@@ -101,11 +103,12 @@ pub fn execute(args: &SyncArgs, json: bool, cli: &config::CliOverrides) -> Resul
         return execute_status(&storage, &path_policy, use_json);
     }
 
-    // Validate that exactly one of flush_only or import_only is set
-    if args.flush_only == args.import_only {
+    // Validate mutually exclusive modes
+    let mode_count = u8::from(args.flush_only) + u8::from(args.import_only) + u8::from(args.merge);
+    if mode_count > 1 {
         return Err(BeadsError::Validation {
             field: "mode".to_string(),
-            reason: "Must specify exactly one of --flush-only or --import-only".to_string(),
+            reason: "Must specify exactly one of --flush-only, --import-only, or --merge".to_string(),
         });
     }
 
@@ -119,7 +122,19 @@ pub fn execute(args: &SyncArgs, json: bool, cli: &config::CliOverrides) -> Resul
             show_progress,
             retention_days,
         )
+    } else if args.merge {
+        execute_merge(
+            &mut storage,
+            &path_policy,
+            args,
+            use_json,
+            show_progress,
+            retention_days,
+            cli,
+        )
     } else {
+        // Default to import-only if no flag is specified (consistent with existing behavior)
+        // or explicitly import-only
         execute_import(&mut storage, &path_policy, args, use_json, show_progress)
     }
 }
@@ -748,6 +763,138 @@ fn execute_import(
             println!("  Tombstone protected: {} issues", result.tombstone_skipped);
         }
         println!("  Rebuilt blocked cache");
+    }
+
+    Ok(())
+}
+
+/// Execute the --merge operation.
+#[allow(clippy::too_many_lines)]
+fn execute_merge(
+    storage: &mut crate::storage::SqliteStorage,
+    path_policy: &SyncPathPolicy,
+    args: &SyncArgs,
+    json: bool,
+    show_progress: bool,
+    retention_days: Option<u64>,
+    cli: &config::CliOverrides,
+) -> Result<()> {
+    info!("Starting 3-way merge");
+    let beads_dir = &path_policy.beads_dir;
+    let jsonl_path = &path_policy.jsonl_path;
+
+    // 1. Load Base State (ancestor)
+    let base = load_base_snapshot(beads_dir)?;
+    debug!(base_count = base.len(), "Loaded base snapshot");
+
+    // 2. Load Left State (local DB)
+    let mut left = HashMap::new();
+    for issue in storage.get_all_issues_for_export()? {
+        left.insert(issue.id.clone(), issue);
+    }
+    debug!(left_count = left.len(), "Loaded local state (DB)");
+
+    // 3. Load Right State (external JSONL)
+    let mut right = HashMap::new();
+    if jsonl_path.exists() {
+        for issue in read_issues_from_jsonl(jsonl_path)? {
+            right.insert(issue.id.clone(), issue);
+        }
+    }
+    debug!(right_count = right.len(), "Loaded external state (JSONL)");
+
+    // 4. Perform Merge
+    let context = MergeContext::new(base, left, right);
+    // TODO: support configurable conflict strategy via CLI args if needed
+    let strategy = ConflictResolution::PreferNewer; 
+    let tombstones = if args.force {
+        None 
+    } else {
+        // We implicitly respect tombstones by default in merge logic
+        None
+    };
+
+    let report = three_way_merge(&context, strategy, tombstones);
+
+    // 5. Apply Changes to DB
+    info!(
+        kept = report.kept.len(),
+        deleted = report.deleted.len(),
+        conflicts = report.conflicts.len(),
+        "Merge calculated"
+    );
+
+    if report.has_conflicts() {
+        // For now, fail on conflicts. Future: interactive resolution or force flags.
+        let mut msg = String::from("Merge conflicts detected:\n");
+        for (id, kind) in &report.conflicts {
+            use std::fmt::Write;
+            let _ = writeln!(msg, "  - {id}: {kind:?}");
+        }
+        return Err(BeadsError::Config(msg));
+    }
+
+    let actor = cli.actor.as_deref().unwrap_or("br");
+
+    // Apply deletions
+    for id in &report.deleted {
+        storage.delete_issue(id, "system", "merge deletion", Some(chrono::Utc::now()))?;
+    }
+
+    // Apply updates/creates (upsert)
+    // We need to retrieve the actual Issue objects to upsert.
+    for issue in &report.kept {
+        storage.upsert_issue_for_import(issue)?;
+        storage.sync_labels_for_import(&issue.id, &issue.labels)?;
+        storage.sync_dependencies_for_import(&issue.id, &issue.dependencies)?;
+        storage.sync_comments_for_import(&issue.id, &issue.comments)?;
+    }
+    
+    // Rebuild cache
+    storage.rebuild_blocked_cache(true)?;
+
+    // Save Base Snapshot
+    let new_base: HashMap<_, _> = report.kept.iter().map(|i| (i.id.clone(), i.clone())).collect();
+    save_base_snapshot(&new_base, beads_dir)?;
+
+    // Force Export to update JSONL (ensure sync)
+    info!(path = %jsonl_path.display(), "Writing merged issues.jsonl");
+    let export_config = ExportConfig {
+        force: true, // Force export to ensure JSONL matches DB
+        is_default_path: true,
+        error_policy: ExportErrorPolicy::Strict,
+        retention_days,
+        beads_dir: Some(path_policy.beads_dir.clone()),
+        allow_external_jsonl: args.allow_external_jsonl,
+        show_progress,
+        history: HistoryConfig::default(),
+    };
+    
+    let (export_result, _) = export_to_jsonl_with_policy(storage, jsonl_path, &export_config)?;
+    finalize_export(storage, &export_result, Some(&export_result.issue_hashes))?;
+    
+    // Output success message
+    if json {
+        let output = serde_json::json!({
+            "status": "success",
+            "merged_issues": report.kept.len(),
+            "deleted_issues": report.deleted.len(),
+            "conflicts": report.conflicts.len(),
+            "notes": report.notes,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!("Merge complete:");
+        println!("  Kept/Updated: {} issues", report.kept.len());
+        println!("  Deleted: {} issues", report.deleted.len());
+        if !report.notes.is_empty() {
+            println!("  Notes:");
+            for (id, note) in &report.notes {
+                println!("    - {id}: {note}");
+            }
+        }
+        println!("  Base snapshot updated.");
+        println!("  JSONL exported.");
     }
 
     Ok(())

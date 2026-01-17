@@ -583,7 +583,33 @@ impl SqliteStorage {
             params.push(Box::new(format!("%{title_contains}%")));
         }
 
-        sql.push_str(" ORDER BY priority ASC, created_at DESC");
+        // Apply custom sort if provided
+        if let Some(ref sort_field) = filters.sort {
+            let order = if filters.reverse { "DESC" } else { "ASC" };
+            // Simple validation to prevent injection (though params should handle it,
+            // column names can't be parameterized)
+            match sort_field.as_str() {
+                "priority" => {
+                    let _ = write!(sql, " ORDER BY priority {order}, created_at DESC");
+                }
+                "created_at" | "created" => {
+                    let _ = write!(sql, " ORDER BY created_at {order}");
+                }
+                "updated_at" | "updated" => {
+                    let _ = write!(sql, " ORDER BY updated_at {order}");
+                }
+                "title" => {
+                    // Case-insensitive sort for title
+                    let _ = write!(sql, " ORDER BY title COLLATE NOCASE {order}");
+                }
+                _ => {
+                    // Default fallback
+                    sql.push_str(" ORDER BY priority ASC, created_at DESC");
+                }
+            }
+        } else {
+            sql.push_str(" ORDER BY priority ASC, created_at DESC");
+        }
 
         if let Some(limit) = filters.limit {
             if limit > 0 {
@@ -2439,27 +2465,27 @@ impl SqliteStorage {
     fn issue_from_row(&self, row: &rusqlite::Row) -> rusqlite::Result<Issue> {
         Ok(Issue {
             id: row.get(0)?,
-            content_hash: row.get(1)?,
+            content_hash: row.get::<_, Option<String>>(1)?,
             title: row.get(2)?,
-            description: row.get(3)?,
-            design: row.get(4)?,
-            acceptance_criteria: row.get(5)?,
-            notes: row.get(6)?,
+            description: row.get::<_, Option<String>>(3)?,
+            design: row.get::<_, Option<String>>(4)?,
+            acceptance_criteria: row.get::<_, Option<String>>(5)?,
+            notes: row.get::<_, Option<String>>(6)?,
             status: parse_status(row.get::<_, Option<String>>(7)?.as_deref()),
             priority: Priority(row.get::<_, Option<i32>>(8)?.unwrap_or(2)),
             issue_type: parse_issue_type(row.get::<_, Option<String>>(9)?.as_deref()),
-            assignee: row.get(10)?,
-            owner: row.get(11)?,
-            estimated_minutes: row.get(12)?,
+            assignee: row.get::<_, Option<String>>(10)?,
+            owner: row.get::<_, Option<String>>(11)?,
+            estimated_minutes: row.get::<_, Option<i32>>(12)?,
             created_at: parse_datetime(&row.get::<_, String>(13)?),
-            created_by: row.get(14)?,
+            created_by: row.get::<_, Option<String>>(14)?,
             updated_at: parse_datetime(&row.get::<_, String>(15)?),
             closed_at: row
                 .get::<_, Option<String>>(16)?
                 .as_deref()
                 .map(parse_datetime),
-            close_reason: row.get(17)?,
-            closed_by_session: row.get(18)?,
+            close_reason: row.get::<_, Option<String>>(17)?,
+            closed_by_session: row.get::<_, Option<String>>(18)?,
             due_at: row
                 .get::<_, Option<String>>(19)?
                 .as_deref()
@@ -2468,23 +2494,23 @@ impl SqliteStorage {
                 .get::<_, Option<String>>(20)?
                 .as_deref()
                 .map(parse_datetime),
-            external_ref: row.get(21)?,
-            source_system: row.get(22)?,
+            external_ref: row.get::<_, Option<String>>(21)?,
+            source_system: row.get::<_, Option<String>>(22)?,
             deleted_at: row
                 .get::<_, Option<String>>(23)?
                 .as_deref()
                 .map(parse_datetime),
-            deleted_by: row.get(24)?,
-            delete_reason: row.get(25)?,
-            original_type: row.get(26)?,
-            compaction_level: row.get(27)?,
+            deleted_by: row.get::<_, Option<String>>(24)?,
+            delete_reason: row.get::<_, Option<String>>(25)?,
+            original_type: row.get::<_, Option<String>>(26)?,
+            compaction_level: row.get::<_, Option<i32>>(27)?,
             compacted_at: row
                 .get::<_, Option<String>>(28)?
                 .as_deref()
                 .map(parse_datetime),
-            compacted_at_commit: row.get(29)?,
-            original_size: row.get(30)?,
-            sender: row.get(31)?,
+            compacted_at_commit: row.get::<_, Option<String>>(29)?,
+            original_size: row.get::<_, Option<i32>>(30)?,
+            sender: row.get::<_, Option<String>>(31)?,
             ephemeral: row.get::<_, Option<i32>>(32)?.unwrap_or(0) != 0,
             pinned: row.get::<_, Option<i32>>(33)?.unwrap_or(0) != 0,
             is_template: row.get::<_, Option<i32>>(34)?.unwrap_or(0) != 0,
@@ -2497,6 +2523,7 @@ impl SqliteStorage {
 
 /// Filter options for listing issues.
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ListFilters {
     pub statuses: Option<Vec<Status>>,
     pub types: Option<Vec<IssueType>>,
@@ -2507,6 +2534,10 @@ pub struct ListFilters {
     pub include_templates: bool,
     pub title_contains: Option<String>,
     pub limit: Option<usize>,
+    /// Sort field (priority, `created_at`, `updated_at`, title)
+    pub sort: Option<String>,
+    /// Reverse sort order
+    pub reverse: bool,
 }
 
 /// Fields to update on an issue.
@@ -2686,7 +2717,7 @@ impl SqliteStorage {
     }
 
     /// Get dependencies as full Dependency structs for export.
-    fn get_dependencies_full(&self, issue_id: &str) -> Result<Vec<crate::model::Dependency>> {
+    pub fn get_dependencies_full(&self, issue_id: &str) -> Result<Vec<crate::model::Dependency>> {
         let mut stmt = self.conn.prepare(
             "SELECT issue_id, depends_on_id, type, created_at, created_by, metadata, thread_id
              FROM dependencies
@@ -3209,7 +3240,6 @@ mod tests {
             status,
             priority: Priority(priority),
             issue_type: IssueType::Task,
-            assignee: assignee.map(str::to_string),
             created_at,
             updated_at: created_at,
             defer_until,
@@ -3218,6 +3248,7 @@ mod tests {
             design: None,
             acceptance_criteria: None,
             notes: None,
+            assignee: assignee.map(str::to_string),
             owner: None,
             estimated_minutes: None,
             created_by: None,
@@ -3512,6 +3543,8 @@ mod tests {
             include_templates: false,
             title_contains: None,
             limit: None,
+            sort: None,
+            reverse: false,
         };
 
         let issues = storage.list_issues(&filters).unwrap();

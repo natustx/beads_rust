@@ -62,6 +62,7 @@ pub fn execute(args: &ChangelogArgs, json: bool, cli: &config::CliOverrides) -> 
 
     let filters = ListFilters {
         statuses: Some(vec![Status::Closed]),
+        include_closed: true,
         ..Default::default()
     };
     let issues = storage.list_issues(&filters)?;

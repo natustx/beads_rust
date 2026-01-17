@@ -161,6 +161,8 @@ fn build_filters(args: &ListArgs) -> Result<ListFilters> {
         include_templates: false,
         title_contains: args.title_contains.clone(),
         limit: args.limit,
+        sort: args.sort.clone(),
+        reverse: args.reverse,
     })
 }
 

@@ -198,6 +198,8 @@ fn build_filters(args: &ListArgs) -> Result<ListFilters> {
         include_templates: false,
         title_contains: args.title_contains.clone(),
         limit: args.limit,
+        sort: args.sort.clone(),
+        reverse: args.reverse,
     })
 }
 
@@ -330,7 +332,7 @@ fn apply_sort(issues: &mut [Issue], sort: Option<&str>) -> Result<()> {
         "priority" => issues.sort_by_key(|issue| issue.priority),
         "created_at" => issues.sort_by_key(|issue| issue.created_at),
         "updated_at" => issues.sort_by_key(|issue| issue.updated_at),
-        "title" => issues.sort_by(|a, b| a.title.cmp(&b.title)),
+        "title" => issues.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
         _ => {
             return Err(BeadsError::Validation {
                 field: "sort".to_string(),

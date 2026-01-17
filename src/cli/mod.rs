@@ -230,6 +230,9 @@ EXAMPLES:
         #[command(subcommand)]
         command: QueryCommands,
     },
+
+    /// Visualize dependency graph
+    Graph(GraphArgs),
 }
 
 /// Arguments for the completions command.
@@ -484,7 +487,7 @@ pub enum OutputFormat {
 }
 
 /// Arguments for the list command.
-#[derive(Args, Debug, Default)]
+#[derive(Args, Debug, Default, Clone)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct ListArgs {
     /// Filter by status (can be repeated)
@@ -1107,6 +1110,13 @@ pub struct SyncArgs {
     #[arg(long)]
     pub import_only: bool,
 
+    /// Perform a 3-way merge (Base + Local DB + Remote JSONL)
+    ///
+    /// Reconciles changes when both the database and JSONL have been modified.
+    /// Uses .beads/base_snapshot.jsonl as the common ancestor.
+    #[arg(long)]
+    pub merge: bool,
+
     /// Show sync status (read-only)
     ///
     /// Displays hash comparison and freshness info without modifications.
@@ -1311,4 +1321,65 @@ pub struct ChangelogArgs {
     /// Machine-readable output (alias for --json)
     #[arg(long)]
     pub robot: bool,
+}
+
+/// Subcommands for the query command.
+#[derive(Subcommand, Debug)]
+pub enum QueryCommands {
+    /// Save current filter set as a named query
+    Save(QuerySaveArgs),
+    /// Run a saved query
+    Run(QueryRunArgs),
+    /// List all saved queries
+    List,
+    /// Delete a saved query
+    Delete(QueryDeleteArgs),
+}
+
+/// Arguments for the query save command.
+#[derive(Args, Debug, Clone)]
+pub struct QuerySaveArgs {
+    /// Name for the saved query
+    pub name: String,
+
+    /// Optional description
+    #[arg(long, short = 'd')]
+    pub description: Option<String>,
+
+    /// Filters to save (same as list command filters)
+    #[command(flatten)]
+    pub filters: ListArgs,
+}
+
+/// Arguments for the query run command.
+#[derive(Args, Debug, Clone)]
+pub struct QueryRunArgs {
+    /// Name of the saved query to run
+    pub name: String,
+
+    /// Additional filters to merge with saved query (CLI overrides saved)
+    #[command(flatten)]
+    pub filters: ListArgs,
+}
+
+/// Arguments for the query delete command.
+#[derive(Args, Debug, Clone)]
+pub struct QueryDeleteArgs {
+    /// Name of the saved query to delete
+    pub name: String,
+}
+
+/// Arguments for the graph command.
+#[derive(Args, Debug, Clone, Default)]
+pub struct GraphArgs {
+    /// Issue ID (root of graph). Required unless --all is specified.
+    pub issue: Option<String>,
+
+    /// Show graph for all `open`/`in_progress`/`blocked` issues (connected components)
+    #[arg(long)]
+    pub all: bool,
+
+    /// One line per issue (compact output)
+    #[arg(long)]
+    pub compact: bool,
 }

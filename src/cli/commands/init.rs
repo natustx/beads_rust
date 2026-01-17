@@ -67,6 +67,7 @@ pub fn execute(prefix: Option<String>, force: bool, root_dir: Option<&Path>) -> 
 
 # Temporary
 last-touched
+*.tmp
 ";
         fs::write(gitignore_path, gitignore)?;
     }

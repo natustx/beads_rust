@@ -575,3 +575,292 @@ fn e2e_reopen_command() {
     assert_eq!(reopened[0]["id"], issue_id);
     assert_eq!(reopened[0]["status"], "open");
 }
+
+/// E2E tests for saved queries: query save/run/list/delete.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn e2e_saved_queries_lifecycle() {
+    let workspace = BrWorkspace::new();
+
+    // Initialize workspace
+    let init = run_br(&workspace, ["init"], "saved_query_init");
+    assert!(init.status.success(), "init failed: {}", init.stderr);
+
+    // Create test issues with different types and priorities
+    let bug = run_br(
+        &workspace,
+        ["create", "Critical bug", "-t", "bug", "-p", "0"],
+        "saved_query_create_bug",
+    );
+    assert!(bug.status.success(), "bug create failed: {}", bug.stderr);
+
+    let task = run_br(
+        &workspace,
+        ["create", "Normal task", "-t", "task", "-p", "2"],
+        "saved_query_create_task",
+    );
+    assert!(task.status.success(), "task create failed: {}", task.stderr);
+
+    let feature = run_br(
+        &workspace,
+        ["create", "New feature", "-t", "feature", "-p", "1"],
+        "saved_query_create_feature",
+    );
+    assert!(
+        feature.status.success(),
+        "feature create failed: {}",
+        feature.stderr
+    );
+
+    // Test query save - save a query for bugs only
+    let save_bugs = run_br(
+        &workspace,
+        [
+            "query",
+            "save",
+            "my-bugs",
+            "--type",
+            "bug",
+            "--description",
+            "All bug issues",
+        ],
+        "saved_query_save_bugs",
+    );
+    assert!(
+        save_bugs.status.success(),
+        "query save failed: {}",
+        save_bugs.stderr
+    );
+    assert!(
+        save_bugs.stdout.contains("Saved query 'my-bugs'"),
+        "save output missing confirmation"
+    );
+
+    // Test query save with JSON output
+    let save_p0 = run_br(
+        &workspace,
+        ["query", "save", "critical", "--priority", "0", "--json"],
+        "saved_query_save_p0",
+    );
+    assert!(
+        save_p0.status.success(),
+        "query save critical failed: {}",
+        save_p0.stderr
+    );
+    let save_p0_payload = extract_json_payload(&save_p0.stdout);
+    let save_p0_json: Value = serde_json::from_str(&save_p0_payload).expect("save json");
+    assert_eq!(save_p0_json["status"], "ok");
+    assert_eq!(save_p0_json["name"], "critical");
+    assert_eq!(save_p0_json["action"], "saved");
+
+    // Test query list - text output
+    let list_text = run_br(&workspace, ["query", "list"], "saved_query_list_text");
+    assert!(
+        list_text.status.success(),
+        "query list failed: {}",
+        list_text.stderr
+    );
+    assert!(list_text.stdout.contains("my-bugs"), "list missing my-bugs");
+    assert!(
+        list_text.stdout.contains("critical"),
+        "list missing critical"
+    );
+    assert!(
+        list_text.stdout.contains("All bug issues"),
+        "list missing description"
+    );
+
+    // Test query list - JSON output
+    let list_json = run_br(
+        &workspace,
+        ["query", "list", "--json"],
+        "saved_query_list_json",
+    );
+    assert!(
+        list_json.status.success(),
+        "query list json failed: {}",
+        list_json.stderr
+    );
+    let list_payload = extract_json_payload(&list_json.stdout);
+    let list_parsed: Value = serde_json::from_str(&list_payload).expect("list json");
+    assert_eq!(list_parsed["count"], 2);
+    let queries = list_parsed["queries"].as_array().expect("queries array");
+    assert!(queries.iter().any(|q| q["name"] == "my-bugs"));
+    assert!(queries.iter().any(|q| q["name"] == "critical"));
+
+    // Test query run - run the bugs query
+    let run_bugs = run_br(
+        &workspace,
+        ["query", "run", "my-bugs", "--json"],
+        "saved_query_run_bugs",
+    );
+    assert!(
+        run_bugs.status.success(),
+        "query run bugs failed: {}",
+        run_bugs.stderr
+    );
+    let run_bugs_payload = extract_json_payload(&run_bugs.stdout);
+    let run_bugs_json: Vec<Value> = serde_json::from_str(&run_bugs_payload).expect("run bugs json");
+    // Should only return bug type issues
+    assert_eq!(run_bugs_json.len(), 1);
+    assert_eq!(run_bugs_json[0]["issue_type"], "bug");
+    assert!(
+        run_bugs_json[0]["title"]
+            .as_str()
+            .unwrap()
+            .contains("Critical bug")
+    );
+
+    // Test query run - run critical priority query
+    let run_critical = run_br(
+        &workspace,
+        ["query", "run", "critical", "--json"],
+        "saved_query_run_critical",
+    );
+    assert!(
+        run_critical.status.success(),
+        "query run critical failed: {}",
+        run_critical.stderr
+    );
+    let run_critical_payload = extract_json_payload(&run_critical.stdout);
+    let run_critical_json: Vec<Value> =
+        serde_json::from_str(&run_critical_payload).expect("run critical json");
+    // Should only return P0 issues
+    assert_eq!(run_critical_json.len(), 1);
+    assert_eq!(run_critical_json[0]["priority"], 0);
+
+    // Test CLI override - run bugs query but filter further by priority
+    // (The bug has P0, so filtering by P1 should return empty)
+    let run_override = run_br(
+        &workspace,
+        ["query", "run", "my-bugs", "--priority", "1", "--json"],
+        "saved_query_run_override",
+    );
+    assert!(
+        run_override.status.success(),
+        "query run override failed: {}",
+        run_override.stderr
+    );
+    let run_override_payload = extract_json_payload(&run_override.stdout);
+    let run_override_json: Vec<Value> =
+        serde_json::from_str(&run_override_payload).expect("run override json");
+    // CLI priority filter (P1) overrides, so no P0 bugs returned
+    assert!(
+        run_override_json.is_empty(),
+        "expected empty result when CLI priority overrides saved"
+    );
+
+    // Test query delete - text output
+    let delete_text = run_br(
+        &workspace,
+        ["query", "delete", "my-bugs"],
+        "saved_query_delete_text",
+    );
+    assert!(
+        delete_text.status.success(),
+        "query delete failed: {}",
+        delete_text.stderr
+    );
+    assert!(
+        delete_text.stdout.contains("Deleted query 'my-bugs'"),
+        "delete output missing confirmation"
+    );
+
+    // Test query delete - JSON output
+    let delete_json = run_br(
+        &workspace,
+        ["query", "delete", "critical", "--json"],
+        "saved_query_delete_json",
+    );
+    assert!(
+        delete_json.status.success(),
+        "query delete json failed: {}",
+        delete_json.stderr
+    );
+    let delete_payload = extract_json_payload(&delete_json.stdout);
+    let delete_parsed: Value = serde_json::from_str(&delete_payload).expect("delete json");
+    assert_eq!(delete_parsed["status"], "ok");
+    assert_eq!(delete_parsed["name"], "critical");
+    assert_eq!(delete_parsed["action"], "deleted");
+
+    // Verify queries are deleted
+    let list_empty = run_br(&workspace, ["query", "list"], "saved_query_list_empty");
+    assert!(
+        list_empty.status.success(),
+        "query list empty failed: {}",
+        list_empty.stderr
+    );
+    assert!(
+        list_empty.stdout.contains("No saved queries"),
+        "expected no saved queries after deletion"
+    );
+}
+
+/// E2E tests for saved query error cases.
+#[test]
+fn e2e_saved_queries_errors() {
+    let workspace = BrWorkspace::new();
+
+    // Initialize workspace
+    let init = run_br(&workspace, ["init"], "saved_query_error_init");
+    assert!(init.status.success(), "init failed: {}", init.stderr);
+
+    // Create a query first
+    let save = run_br(
+        &workspace,
+        ["query", "save", "test-query", "--status", "open"],
+        "saved_query_error_save",
+    );
+    assert!(save.status.success(), "query save failed: {}", save.stderr);
+
+    // Test duplicate name error
+    let save_dup = run_br(
+        &workspace,
+        ["query", "save", "test-query", "--status", "closed"],
+        "saved_query_error_dup",
+    );
+    assert!(!save_dup.status.success(), "duplicate save should fail");
+    assert!(
+        save_dup.stderr.contains("already exists"),
+        "error should mention query already exists"
+    );
+
+    // Test run nonexistent query
+    let run_missing = run_br(
+        &workspace,
+        ["query", "run", "nonexistent"],
+        "saved_query_error_run_missing",
+    );
+    assert!(!run_missing.status.success(), "run nonexistent should fail");
+    assert!(
+        run_missing.stderr.contains("not found"),
+        "error should mention query not found"
+    );
+
+    // Test delete nonexistent query
+    let delete_missing = run_br(
+        &workspace,
+        ["query", "delete", "nonexistent"],
+        "saved_query_error_delete_missing",
+    );
+    assert!(
+        !delete_missing.status.success(),
+        "delete nonexistent should fail"
+    );
+    assert!(
+        delete_missing.stderr.contains("not found"),
+        "error should mention query not found"
+    );
+
+    // Test invalid query name (contains ':')
+    let save_invalid = run_br(
+        &workspace,
+        ["query", "save", "bad:name", "--status", "open"],
+        "saved_query_error_invalid_name",
+    );
+    assert!(!save_invalid.status.success(), "invalid name should fail");
+    assert!(
+        save_invalid.stderr.contains("cannot contain"),
+        "error should mention invalid characters"
+    );
+}

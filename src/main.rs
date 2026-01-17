@@ -86,6 +86,8 @@ fn main() {
         Commands::Changelog(args) => {
             commands::changelog::execute(&args, cli.json || args.robot, &overrides)
         }
+        Commands::Query { command } => commands::query::execute(&command, cli.json, &overrides),
+        Commands::Graph(args) => commands::graph::execute(&args, cli.json, &overrides),
     };
 
     // Handle command result
