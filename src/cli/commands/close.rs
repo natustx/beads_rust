@@ -216,7 +216,7 @@ pub fn execute_with_args(args: &CloseArgs, json: bool, cli: &config::CliOverride
         let update = IssueUpdate {
             status: Some(Status::Closed),
             closed_at: Some(Some(now)),
-            close_reason: args.reason.clone().map(Some),
+            close_reason: Some(Some(args.reason.clone().unwrap_or_else(|| "done".to_string()))),
             closed_by_session: args.session.clone().map(Some),
             ..Default::default()
         };
