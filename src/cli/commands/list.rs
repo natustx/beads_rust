@@ -340,9 +340,16 @@ fn validate_sort_key(sort: Option<&str>) -> Result<()> {
 mod tests {
     use super::*;
     use crate::cli;
+    use tracing::info;
+
+    fn init_logging() {
+        crate::logging::init_test_logging();
+    }
 
     #[test]
     fn test_build_filters_includes_closed_for_terminal_status() {
+        init_logging();
+        info!("test_build_filters_includes_closed_for_terminal_status: starting");
         let args = cli::ListArgs {
             status: vec!["closed".to_string()],
             ..Default::default()
@@ -357,10 +364,13 @@ mod tests {
                 .expect("statuses")
                 .contains(&Status::Closed)
         );
+        info!("test_build_filters_includes_closed_for_terminal_status: assertions passed");
     }
 
     #[test]
     fn test_build_filters_parses_priorities() {
+        init_logging();
+        info!("test_build_filters_parses_priorities: starting");
         let args = cli::ListArgs {
             priority: vec![0, 2],
             ..Default::default()
@@ -370,10 +380,13 @@ mod tests {
         let priorities = filters.priorities.expect("priorities");
         let values: Vec<i32> = priorities.iter().map(|p| p.0).collect();
         assert_eq!(values, vec![0, 2]);
+        info!("test_build_filters_parses_priorities: assertions passed");
     }
 
     #[test]
     fn test_needs_client_filters_detects_fields() {
+        init_logging();
+        info!("test_needs_client_filters_detects_fields: starting");
         let args = ListArgs::default();
         assert!(!needs_client_filters(&args));
 
@@ -388,14 +401,18 @@ mod tests {
             ..Default::default()
         };
         assert!(needs_client_filters(&args));
+        info!("test_needs_client_filters_detects_fields: assertions passed");
     }
 
     #[test]
     fn test_validate_priority_range_rejects_out_of_range() {
+        init_logging();
+        info!("test_validate_priority_range_rejects_out_of_range: starting");
         let err = validate_priority_range(&[9]).unwrap_err();
         match err {
             BeadsError::InvalidPriority { priority } => assert_eq!(priority, 9),
             other => panic!("unexpected error: {other:?}"),
         }
+        info!("test_validate_priority_range_rejects_out_of_range: assertions passed");
     }
 }
