@@ -625,18 +625,15 @@ mod tests {
     }
 
     #[test]
-    fn test_create_issue_custom_type() {
+    fn test_create_issue_invalid_type_rejected() {
+        // Custom/unknown types are rejected for bd conformance
         let mut storage = setup_memory_storage();
         let mut args = default_args();
         args.type_ = Some("invalid_type".to_string());
         let config = default_config();
 
-        let issue = create_issue_impl(&mut storage, &args, &config)
-            .expect("create should succeed with custom type");
-        assert_eq!(
-            issue.issue_type,
-            IssueType::Custom("invalid_type".to_string())
-        );
+        let result = create_issue_impl(&mut storage, &args, &config);
+        assert!(result.is_err(), "create should fail with invalid type");
     }
 
     // =========================================================================
