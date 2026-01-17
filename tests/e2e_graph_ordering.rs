@@ -15,6 +15,7 @@ fn parse_created_id(stdout: &str) -> String {
 
 #[test]
 fn e2e_graph_dfs_ordering() {
+    let _log = common::test_log("e2e_graph_dfs_ordering");
     let workspace = BrWorkspace::new();
     run_br(&workspace, ["init"], "init");
 

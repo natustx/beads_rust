@@ -205,6 +205,12 @@ EXAMPLES:
     /// Run read-only diagnostics
     Doctor,
 
+    /// Show diagnostic metadata about the workspace
+    Info(InfoArgs),
+
+    /// Show the active .beads directory
+    Where,
+
     /// Show version information
     Version,
 
@@ -475,6 +481,22 @@ pub struct DeleteArgs {
     /// Preview only, no changes
     #[arg(long)]
     pub dry_run: bool,
+}
+
+/// Arguments for the info command.
+#[derive(Args, Debug, Default, Clone)]
+pub struct InfoArgs {
+    /// Include schema details
+    #[arg(long)]
+    pub schema: bool,
+
+    /// Show recent changes and exit
+    #[arg(long = "whats-new", conflicts_with = "thanks")]
+    pub whats_new: bool,
+
+    /// Show acknowledgements and exit
+    #[arg(long, conflicts_with = "whats_new")]
+    pub thanks: bool,
 }
 
 /// Output format for list command.

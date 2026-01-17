@@ -328,7 +328,7 @@ fn validate_sort_key(sort: Option<&str>) -> Result<()> {
     };
 
     match sort_key {
-        "priority" | "created_at" | "updated_at" | "title" => Ok(()),
+        "priority" | "created_at" | "updated_at" | "title" | "created" | "updated" => Ok(()),
         _ => Err(BeadsError::Validation {
             field: "sort".to_string(),
             reason: format!("invalid sort field '{sort_key}'"),

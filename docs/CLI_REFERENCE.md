@@ -725,6 +725,26 @@ Checks database integrity, schema compatibility, and configuration.
 
 ---
 
+### info
+
+Show workspace diagnostics and metadata.
+
+```bash
+br info [--schema] [--whats-new] [--thanks]
+```
+
+---
+
+### where
+
+Show the active `.beads` directory (after redirects, if any).
+
+```bash
+br where
+```
+
+---
+
 ### version
 
 Show version information.

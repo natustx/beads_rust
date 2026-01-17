@@ -41,7 +41,8 @@ pub fn execute(args: &ReadyArgs, json: bool, cli: &config::CliOverrides) -> Resu
         types: parse_types(&args.type_),
         priorities: parse_priorities(&args.priority)?,
         include_deferred: args.include_deferred,
-        limit: Some(args.limit),
+        // Fetch all candidates to allow post-filtering of external blockers
+        limit: None,
     };
 
     let sort_policy = match args.sort {
@@ -54,14 +55,18 @@ pub fn execute(args: &ReadyArgs, json: bool, cli: &config::CliOverrides) -> Resu
     debug!(filters = ?filters, sort = ?sort_policy, "Applied ready filters");
 
     // Get ready issues from storage (blocked cache only)
-    let ready_issues = storage.get_ready_issues(&filters, sort_policy)?;
+    let mut ready_issues = storage.get_ready_issues(&filters, sort_policy)?;
 
-    let mut ready_issues = ready_issues;
     let external_statuses =
         storage.resolve_external_dependency_statuses(&external_db_paths, true)?;
     let external_blockers = storage.external_blockers(&external_statuses)?;
     if !external_blockers.is_empty() {
         ready_issues.retain(|issue| !external_blockers.contains_key(&issue.id));
+    }
+
+    // Apply limit after external filtering
+    if args.limit > 0 && ready_issues.len() > args.limit {
+        ready_issues.truncate(args.limit);
     }
 
     // Batch count dependencies/dependents

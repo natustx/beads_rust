@@ -8,6 +8,7 @@
 
 use crate::model::{Issue, IssueType, Priority, Status};
 use colored::Colorize;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// Status icon characters.
 pub mod icons {
@@ -167,29 +168,51 @@ pub fn terminal_width() -> usize {
     80
 }
 
-/// Truncate a title to fit within `max_len` visible characters.
+/// Truncate a title to fit within `max_len` visible columns.
+///
+/// Handles wide characters (emojis, CJK) correctly using `unicode-width`.
 #[must_use]
 pub fn truncate_title(title: &str, max_len: usize) -> String {
     if max_len == 0 {
         return String::new();
     }
 
-    let title_len = title.chars().count();
-    if title_len <= max_len {
+    let width = UnicodeWidthStr::width(title);
+    if width <= max_len {
         return title.to_string();
     }
 
     if max_len <= 3 {
-        return title.chars().take(max_len).collect();
+        let mut w = 0;
+        let mut s = String::new();
+        for c in title.chars() {
+            let cw = UnicodeWidthChar::width(c).unwrap_or(0);
+            if w + cw > max_len {
+                break;
+            }
+            w += cw;
+            s.push(c);
+        }
+        return s;
     }
 
-    let mut trimmed: String = title.chars().take(max_len - 3).collect();
-    trimmed.push_str("...");
-    trimmed
+    let target_len = max_len - 3;
+    let mut w = 0;
+    let mut s = String::new();
+    for c in title.chars() {
+        let cw = UnicodeWidthChar::width(c).unwrap_or(0);
+        if w + cw > target_len {
+            break;
+        }
+        w += cw;
+        s.push(c);
+    }
+    s.push_str("...");
+    s
 }
 
 fn visible_len(text: &str) -> usize {
-    text.chars().count()
+    UnicodeWidthStr::width(text)
 }
 
 /// Format a single-line issue summary with options.

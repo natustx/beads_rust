@@ -9,6 +9,7 @@ use common::cli::{BrWorkspace, run_br, run_br_with_env};
 
 #[test]
 fn test_config_set_shadowed_by_project_config() {
+    let _log = common::test_log("test_config_set_shadowed_by_project_config");
     let workspace = BrWorkspace::new();
     let home_dir = workspace.temp_dir.path().join("home");
     fs::create_dir_all(&home_dir).unwrap();

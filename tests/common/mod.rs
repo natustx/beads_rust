@@ -2,7 +2,9 @@
 
 use beads_rust::storage::SqliteStorage;
 use std::sync::Once;
+use std::time::Instant;
 use tempfile::TempDir;
+use tracing::info;
 
 pub mod assertions;
 pub mod cli;
@@ -15,6 +17,36 @@ pub fn init_test_logging() {
     INIT.call_once(|| {
         beads_rust::logging::init_test_logging();
     });
+}
+
+pub struct TestLogGuard {
+    name: String,
+    start: Instant,
+}
+
+impl TestLogGuard {
+    fn new(name: &str) -> Self {
+        init_test_logging();
+        info!("{name}: starting");
+        Self {
+            name: name.to_string(),
+            start: Instant::now(),
+        }
+    }
+}
+
+impl Drop for TestLogGuard {
+    fn drop(&mut self) {
+        info!(
+            "{}: assertions passed (elapsed {:?})",
+            self.name,
+            self.start.elapsed()
+        );
+    }
+}
+
+pub fn test_log(name: &str) -> TestLogGuard {
+    TestLogGuard::new(name)
 }
 
 pub fn test_db() -> SqliteStorage {

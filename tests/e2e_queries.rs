@@ -15,6 +15,7 @@ fn parse_created_id(stdout: &str) -> String {
 #[test]
 #[allow(clippy::similar_names, clippy::too_many_lines)]
 fn e2e_queries_ready_stale_count_search() {
+    let _log = common::test_log("e2e_queries_ready_stale_count_search");
     let workspace = BrWorkspace::new();
 
     let init = run_br(&workspace, ["init"], "init");
@@ -268,6 +269,7 @@ fn e2e_queries_ready_stale_count_search() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn e2e_stats_command() {
+    let _log = common::test_log("e2e_stats_command");
     let workspace = BrWorkspace::new();
 
     let init = run_br(&workspace, ["init"], "stats_init");
@@ -397,6 +399,7 @@ fn e2e_stats_command() {
 /// E2E tests for config command - list, get, path.
 #[test]
 fn e2e_config_command() {
+    let _log = common::test_log("e2e_config_command");
     let workspace = BrWorkspace::new();
 
     let init = run_br(&workspace, ["init"], "config_init");
@@ -461,6 +464,7 @@ fn e2e_config_command() {
 /// E2E tests for reopen command.
 #[test]
 fn e2e_reopen_command() {
+    let _log = common::test_log("e2e_reopen_command");
     let workspace = BrWorkspace::new();
 
     let init = run_br(&workspace, ["init"], "reopen_init");
@@ -574,6 +578,7 @@ fn e2e_reopen_command() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn e2e_saved_queries_lifecycle() {
+    let _log = common::test_log("e2e_saved_queries_lifecycle");
     let workspace = BrWorkspace::new();
 
     // Initialize workspace
@@ -793,6 +798,7 @@ fn e2e_saved_queries_lifecycle() {
 /// E2E tests for saved query error cases.
 #[test]
 fn e2e_saved_queries_errors() {
+    let _log = common::test_log("e2e_saved_queries_errors");
     let workspace = BrWorkspace::new();
 
     // Initialize workspace

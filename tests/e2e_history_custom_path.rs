@@ -10,6 +10,7 @@ fn create_issue(workspace: &BrWorkspace, title: &str, label: &str) {
 
 #[test]
 fn e2e_history_custom_path() {
+    let _log = common::test_log("e2e_history_custom_path");
     let workspace = BrWorkspace::new();
     let init = run_br(&workspace, ["init"], "init");
     assert!(init.status.success(), "init failed: {}", init.stderr);
