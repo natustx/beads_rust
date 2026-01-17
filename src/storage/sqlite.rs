@@ -4542,11 +4542,27 @@ mod tests {
         let mut storage = SqliteStorage::open_memory().unwrap();
         let t1 = Utc.with_ymd_and_hms(2025, 6, 1, 0, 0, 0).unwrap();
 
-        let issue = make_issue("bd-dup-1", "First issue", Status::Open, 2, None, t1, None);
+        let issue = make_issue(
+            "bd-dup-1",
+            "First issue",
+            Status::Open,
+            2,
+            None,
+            t1,
+            None,
+        );
         storage.create_issue(&issue, "tester").unwrap();
 
         // Try to create another issue with the same ID
-        let dup = make_issue("bd-dup-1", "Duplicate", Status::Open, 2, None, t1, None);
+        let dup = make_issue(
+            "bd-dup-1",
+            "Duplicate",
+            Status::Open,
+            2,
+            None,
+            t1,
+            None,
+        );
         let result = storage.create_issue(&dup, "tester");
 
         assert!(result.is_err(), "Creating duplicate ID should fail");
@@ -4601,11 +4617,11 @@ mod tests {
     #[test]
     fn test_list_issues_filter_by_title() {
         let mut storage = SqliteStorage::open_memory().unwrap();
-        let t1 = Utc.with_ymd_and_hms(2025, 7, 1, 0, 0, 0).unwrap();
+        let t1 = Utc.with_ymd_and_hms(2025, 8, 1, 0, 0, 0).unwrap();
 
         // Create issues with different titles
         let issue1 = make_issue(
-            "bd-t1",
+            "bd-s1",
             "Fix authentication bug",
             Status::Open,
             2,
@@ -4614,7 +4630,7 @@ mod tests {
             None,
         );
         let issue2 = make_issue(
-            "bd-t2",
+            "bd-s2",
             "Add user registration",
             Status::Open,
             2,
@@ -4623,7 +4639,7 @@ mod tests {
             None,
         );
         let issue3 = make_issue(
-            "bd-t3",
+            "bd-s3",
             "Update documentation",
             Status::Open,
             2,
@@ -4645,13 +4661,13 @@ mod tests {
         let issues = storage.list_issues(&filters).unwrap();
 
         assert_eq!(issues.len(), 1, "Should find one issue with 'bug' in title");
-        assert_eq!(issues[0].id, "bd-t1");
+        assert_eq!(issues[0].id, "bd-s1");
     }
 
     #[test]
     fn test_search_issues_full_text() {
         let mut storage = SqliteStorage::open_memory().unwrap();
-        let t1 = Utc.with_ymd_and_hms(2025, 8, 1, 0, 0, 0).unwrap();
+        let t1 = Utc.with_ymd_and_hms(2025, 9, 1, 0, 0, 0).unwrap();
 
         let issue1 = make_issue(
             "bd-s1",
