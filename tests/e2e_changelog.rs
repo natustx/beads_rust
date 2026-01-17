@@ -65,9 +65,9 @@ fn changelog_with_closed_issues() {
     let payload = extract_json_payload(&changelog.stdout);
     eprintln!("DEBUG stdout: {}", changelog.stdout);
     eprintln!("DEBUG stderr: {}", changelog.stderr);
-    eprintln!("DEBUG payload: {}", payload);
+    eprintln!("DEBUG payload: {payload}");
     let json: Value = serde_json::from_str(&payload).expect("parse json");
-    eprintln!("DEBUG json: {:?}", json);
+    eprintln!("DEBUG json: {json:?}");
 
     assert_eq!(json["total_closed"], 2, "should have 2 closed issues");
     assert!(json["since"].is_string(), "should have since field");
@@ -540,8 +540,7 @@ fn changelog_since_relative_time() {
         let json: Value = serde_json::from_str(&payload).expect("parse json");
         assert!(
             json["since"].is_string(),
-            "{} should produce valid since",
-            format
+            "{format} should produce valid since"
         );
     }
 

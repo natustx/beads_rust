@@ -54,7 +54,7 @@ fn e2e_audit_record_single_event() {
 
     // Verify ID was returned
     let id = record.stdout.trim();
-    assert!(id.starts_with("int-"), "ID should start with int-: {}", id);
+    assert!(id.starts_with("int-"), "ID should start with int-: {id}");
 
     // Verify entry was written to interactions.jsonl
     let entries = read_interactions(&workspace);
@@ -365,8 +365,7 @@ fn e2e_audit_record_without_kind_fails() {
     let combined = format!("{}{}", record.stdout, record.stderr);
     assert!(
         combined.contains("kind") || combined.contains("required"),
-        "error should mention kind is required: {}",
-        combined
+        "error should mention kind is required: {combined}"
     );
 }
 
@@ -395,8 +394,7 @@ fn e2e_audit_label_without_label_fails() {
     let combined = format!("{}{}", label.stdout, label.stderr);
     assert!(
         combined.contains("label") || combined.contains("required"),
-        "error should mention label is required: {}",
-        combined
+        "error should mention label is required: {combined}"
     );
 }
 
@@ -485,8 +483,8 @@ fn e2e_audit_record_via_stdin() {
     let json_input = r#"{"kind": "llm_call", "model": "gpt-4", "prompt": "stdin test"}"#;
 
     // Run br with stdin
-    let br_path = assert_cmd::cargo::cargo_bin("br");
-    let mut child = Command::new(&br_path)
+    let br_path = assert_cmd::cargo::cargo_bin!("br");
+    let mut child = Command::new(br_path)
         .args(["audit", "record", "--stdin"])
         .current_dir(&workspace.root)
         .stdin(Stdio::piped())
@@ -507,9 +505,7 @@ fn e2e_audit_record_via_stdin() {
 
     assert!(
         output.status.success(),
-        "stdin record failed: stdout={}, stderr={}",
-        stdout,
-        stderr
+        "stdin record failed: stdout={stdout}, stderr={stderr}"
     );
 
     let entries = read_interactions(&workspace);
@@ -544,9 +540,8 @@ fn e2e_audit_record_created_at_auto_set() {
     let created_at = entries[0]["created_at"].as_str().unwrap();
     // Should be a valid ISO 8601 timestamp
     assert!(
-        created_at.contains("T") && created_at.contains("Z"),
-        "created_at should be ISO 8601: {}",
-        created_at
+        created_at.contains('T') && created_at.contains('Z'),
+        "created_at should be ISO 8601: {created_at}"
     );
 }
 
@@ -562,10 +557,10 @@ fn e2e_audit_unique_ids() {
     for i in 0..20 {
         let record = run_br(
             &workspace,
-            ["audit", "record", "--kind", &format!("event_{}", i)],
-            &format!("record_{}", i),
+            ["audit", "record", "--kind", &format!("event_{i}")],
+            &format!("record_{i}"),
         );
-        assert!(record.status.success(), "record {} failed", i);
+        assert!(record.status.success(), "record {i} failed");
         ids.push(record.stdout.trim().to_string());
     }
 
@@ -579,8 +574,7 @@ fn e2e_audit_unique_ids() {
     assert_eq!(
         unique_count,
         ids.len(),
-        "all IDs should be unique: {:?}",
-        ids
+        "all IDs should be unique: {ids:?}"
     );
 }
 

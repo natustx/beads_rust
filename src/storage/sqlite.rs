@@ -1387,7 +1387,7 @@ impl SqliteStorage {
 
     /// Get epic counts (total children, closed children) for all epics.
     ///
-    /// Returns a map from epic ID to (total_children, closed_children).
+    /// Returns a map from epic ID to (`total_children`, `closed_children`).
     ///
     /// # Errors
     ///
@@ -1404,6 +1404,7 @@ impl SqliteStorage {
              GROUP BY d.depends_on_id",
         )?;
         let mut counts = std::collections::HashMap::new();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let rows = stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -2904,9 +2905,7 @@ fn query_external_project_capabilities(
             .map(|label| label as &dyn rusqlite::ToSql)
             .collect();
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params.as_slice(), |row| {
-            Ok(row.get::<_, String>(0)?)
-        })?;
+        let rows = stmt.query_map(params.as_slice(), |row| row.get::<_, String>(0))?;
 
         for row in rows {
             let label = row?;

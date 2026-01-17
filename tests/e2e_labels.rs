@@ -165,8 +165,7 @@ fn e2e_label_list_all() {
     let urgent_count = label_counts
         .iter()
         .find(|lc| lc["label"] == "urgent")
-        .map(|lc| lc["count"].as_u64().unwrap_or(0))
-        .unwrap_or(0);
+        .map_or(0, |lc| lc["count"].as_u64().unwrap_or(0));
     assert_eq!(urgent_count, 2, "urgent label should have count 2");
 }
 
@@ -203,8 +202,7 @@ fn e2e_label_add_same_to_multiple_issues() {
     let shared_count = label_counts
         .iter()
         .find(|lc| lc["label"] == "shared-label")
-        .map(|lc| lc["count"].as_u64().unwrap_or(0))
-        .unwrap_or(0);
+        .map_or(0, |lc| lc["count"].as_u64().unwrap_or(0));
     assert_eq!(shared_count, 3, "shared-label should have count 3");
 }
 

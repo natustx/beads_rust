@@ -4081,6 +4081,281 @@ fn conformance_list_limit() {
 }
 
 #[test]
+fn conformance_list_filter_status_open() {
+    common::init_test_logging();
+    info!("Starting conformance_list_filter_status_open test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    workspace.run_br(["create", "Open issue", "--json"], "create_open");
+    workspace.run_bd(["create", "Open issue", "--json"], "create_open");
+
+    let br_create_closed = workspace.run_br(["create", "Closed issue", "--json"], "create_closed");
+    let bd_create_closed = workspace.run_bd(["create", "Closed issue", "--json"], "create_closed");
+
+    let br_closed_json = extract_json_payload(&br_create_closed.stdout);
+    let bd_closed_json = extract_json_payload(&bd_create_closed.stdout);
+    let br_closed_val: Value = serde_json::from_str(&br_closed_json).expect("parse");
+    let bd_closed_val: Value = serde_json::from_str(&bd_closed_json).expect("parse");
+
+    let br_closed_id = br_closed_val["id"]
+        .as_str()
+        .or_else(|| br_closed_val[0]["id"].as_str())
+        .unwrap();
+    let bd_closed_id = bd_closed_val["id"]
+        .as_str()
+        .or_else(|| bd_closed_val[0]["id"].as_str())
+        .unwrap();
+
+    workspace.run_br(["close", br_closed_id], "close_closed");
+    workspace.run_bd(["close", bd_closed_id], "close_closed");
+
+    let br_list = workspace.run_br(["list", "--status", "open", "--json"], "list_open");
+    let bd_list = workspace.run_bd(["list", "--status", "open", "--json"], "list_open");
+
+    assert!(
+        br_list.status.success(),
+        "br list open failed: {}",
+        br_list.stderr
+    );
+    assert!(
+        bd_list.status.success(),
+        "bd list open failed: {}",
+        bd_list.stderr
+    );
+
+    let br_list_json = extract_json_payload(&br_list.stdout);
+    let bd_list_json = extract_json_payload(&bd_list.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_list_json).unwrap_or(Value::Array(vec![]));
+    let bd_val: Value = serde_json::from_str(&bd_list_json).unwrap_or(Value::Array(vec![]));
+
+    let br_len = br_val.as_array().map(|a| a.len()).unwrap_or(0);
+    let bd_len = bd_val.as_array().map(|a| a.len()).unwrap_or(0);
+
+    assert_eq!(
+        br_len, bd_len,
+        "open list lengths differ: br={}, bd={}",
+        br_len, bd_len
+    );
+    assert_eq!(br_len, 1, "expected 1 open issue");
+
+    info!("conformance_list_filter_status_open passed");
+}
+
+#[test]
+fn conformance_list_filter_status_in_progress() {
+    common::init_test_logging();
+    info!("Starting conformance_list_filter_status_in_progress test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_create = workspace.run_br(["create", "In progress issue", "--json"], "create_ip");
+    let bd_create = workspace.run_bd(["create", "In progress issue", "--json"], "create_ip");
+
+    let br_json = extract_json_payload(&br_create.stdout);
+    let bd_json = extract_json_payload(&bd_create.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_json).expect("parse");
+    let bd_val: Value = serde_json::from_str(&bd_json).expect("parse");
+
+    let br_id = br_val["id"]
+        .as_str()
+        .or_else(|| br_val[0]["id"].as_str())
+        .unwrap();
+    let bd_id = bd_val["id"]
+        .as_str()
+        .or_else(|| bd_val[0]["id"].as_str())
+        .unwrap();
+
+    workspace.run_br(
+        ["update", br_id, "--status", "in_progress"],
+        "update_ip",
+    );
+    workspace.run_bd(
+        ["update", bd_id, "--status", "in_progress"],
+        "update_ip",
+    );
+
+    let br_list = workspace.run_br(
+        ["list", "--status", "in_progress", "--json"],
+        "list_in_progress",
+    );
+    let bd_list = workspace.run_bd(
+        ["list", "--status", "in_progress", "--json"],
+        "list_in_progress",
+    );
+
+    assert!(
+        br_list.status.success(),
+        "br list in_progress failed: {}",
+        br_list.stderr
+    );
+    assert!(
+        bd_list.status.success(),
+        "bd list in_progress failed: {}",
+        bd_list.stderr
+    );
+
+    let br_list_json = extract_json_payload(&br_list.stdout);
+    let bd_list_json = extract_json_payload(&bd_list.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_list_json).unwrap_or(Value::Array(vec![]));
+    let bd_val: Value = serde_json::from_str(&bd_list_json).unwrap_or(Value::Array(vec![]));
+
+    let br_len = br_val.as_array().map(|a| a.len()).unwrap_or(0);
+    let bd_len = bd_val.as_array().map(|a| a.len()).unwrap_or(0);
+
+    assert_eq!(
+        br_len, bd_len,
+        "in_progress list lengths differ: br={}, bd={}",
+        br_len, bd_len
+    );
+    assert_eq!(br_len, 1, "expected 1 in_progress issue");
+
+    info!("conformance_list_filter_status_in_progress passed");
+}
+
+#[test]
+fn conformance_list_filter_priority_range() {
+    common::init_test_logging();
+    info!("Starting conformance_list_filter_priority_range test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    workspace.run_br(
+        ["create", "P0 issue", "--priority", "0"],
+        "create_p0",
+    );
+    workspace.run_bd(
+        ["create", "P0 issue", "--priority", "0"],
+        "create_p0",
+    );
+    workspace.run_br(
+        ["create", "P1 issue", "--priority", "1"],
+        "create_p1",
+    );
+    workspace.run_bd(
+        ["create", "P1 issue", "--priority", "1"],
+        "create_p1",
+    );
+    workspace.run_br(
+        ["create", "P3 issue", "--priority", "3"],
+        "create_p3",
+    );
+    workspace.run_bd(
+        ["create", "P3 issue", "--priority", "3"],
+        "create_p3",
+    );
+
+    let br_list = workspace.run_br(
+        ["list", "--priority-min", "0", "--priority-max", "1", "--json"],
+        "list_priority_range",
+    );
+    let bd_list = workspace.run_bd(
+        ["list", "--priority-min", "0", "--priority-max", "1", "--json"],
+        "list_priority_range",
+    );
+
+    assert!(
+        br_list.status.success(),
+        "br list priority range failed: {}",
+        br_list.stderr
+    );
+    assert!(
+        bd_list.status.success(),
+        "bd list priority range failed: {}",
+        bd_list.stderr
+    );
+
+    let br_list_json = extract_json_payload(&br_list.stdout);
+    let bd_list_json = extract_json_payload(&bd_list.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_list_json).unwrap_or(Value::Array(vec![]));
+    let bd_val: Value = serde_json::from_str(&bd_list_json).unwrap_or(Value::Array(vec![]));
+
+    let br_len = br_val.as_array().map(|a| a.len()).unwrap_or(0);
+    let bd_len = bd_val.as_array().map(|a| a.len()).unwrap_or(0);
+
+    assert_eq!(
+        br_len, bd_len,
+        "priority range lengths differ: br={}, bd={}",
+        br_len, bd_len
+    );
+    assert_eq!(br_len, 2, "expected 2 issues in priority range");
+
+    info!("conformance_list_filter_priority_range passed");
+}
+
+#[test]
+fn conformance_list_filter_label() {
+    common::init_test_logging();
+    info!("Starting conformance_list_filter_label test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_create = workspace.run_br(["create", "Label issue", "--json"], "create_label");
+    let bd_create = workspace.run_bd(["create", "Label issue", "--json"], "create_label");
+
+    let br_json = extract_json_payload(&br_create.stdout);
+    let bd_json = extract_json_payload(&bd_create.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_json).expect("parse");
+    let bd_val: Value = serde_json::from_str(&bd_json).expect("parse");
+
+    let br_id = br_val["id"]
+        .as_str()
+        .or_else(|| br_val[0]["id"].as_str())
+        .unwrap();
+    let bd_id = bd_val["id"]
+        .as_str()
+        .or_else(|| bd_val[0]["id"].as_str())
+        .unwrap();
+
+    workspace.run_br(["label", "add", br_id, "urgent"], "label_add");
+    workspace.run_bd(["label", "add", bd_id, "urgent"], "label_add");
+
+    workspace.run_br(["create", "Unlabeled issue"], "create_unlabeled");
+    workspace.run_bd(["create", "Unlabeled issue"], "create_unlabeled");
+
+    let br_list = workspace.run_br(["list", "--label", "urgent", "--json"], "list_label");
+    let bd_list = workspace.run_bd(["list", "--label", "urgent", "--json"], "list_label");
+
+    assert!(
+        br_list.status.success(),
+        "br list label failed: {}",
+        br_list.stderr
+    );
+    assert!(
+        bd_list.status.success(),
+        "bd list label failed: {}",
+        bd_list.stderr
+    );
+
+    let br_list_json = extract_json_payload(&br_list.stdout);
+    let bd_list_json = extract_json_payload(&bd_list.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_list_json).unwrap_or(Value::Array(vec![]));
+    let bd_val: Value = serde_json::from_str(&bd_list_json).unwrap_or(Value::Array(vec![]));
+
+    let br_len = br_val.as_array().map(|a| a.len()).unwrap_or(0);
+    let bd_len = bd_val.as_array().map(|a| a.len()).unwrap_or(0);
+
+    assert_eq!(
+        br_len, bd_len,
+        "label list lengths differ: br={}, bd={}",
+        br_len, bd_len
+    );
+    assert_eq!(br_len, 1, "expected 1 labeled issue");
+
+    info!("conformance_list_filter_label passed");
+}
+
+#[test]
 fn conformance_show_partial_id() {
     common::init_test_logging();
     info!("Starting conformance_show_partial_id test");
@@ -4145,6 +4420,32 @@ fn conformance_show_partial_id() {
     );
 
     info!("conformance_show_partial_id passed");
+}
+
+#[test]
+fn conformance_show_nonexistent_error() {
+    common::init_test_logging();
+    info!("Starting conformance_show_nonexistent_error test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_show = workspace.run_br(["show", "bd-does-not-exist", "--json"], "show_missing");
+    let bd_show = workspace.run_bd(["show", "bd-does-not-exist", "--json"], "show_missing");
+
+    assert_eq!(
+        br_show.status.success(),
+        bd_show.status.success(),
+        "missing show behavior differs: br success={}, bd success={}",
+        br_show.status.success(),
+        bd_show.status.success()
+    );
+    assert!(
+        !br_show.status.success(),
+        "expected show missing to fail"
+    );
+
+    info!("conformance_show_nonexistent_error passed");
 }
 
 #[test]
@@ -4217,6 +4518,78 @@ fn conformance_update_title() {
     assert_eq!(br_title, Some("New title"), "expected updated title");
 
     info!("conformance_update_title passed");
+}
+
+#[test]
+fn conformance_update_assignee() {
+    common::init_test_logging();
+    info!("Starting conformance_update_assignee test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_create = workspace.run_br(["create", "Assignee update", "--json"], "create");
+    let bd_create = workspace.run_bd(["create", "Assignee update", "--json"], "create");
+
+    let br_json = extract_json_payload(&br_create.stdout);
+    let bd_json = extract_json_payload(&bd_create.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_json).expect("parse");
+    let bd_val: Value = serde_json::from_str(&bd_json).expect("parse");
+
+    let br_id = br_val["id"]
+        .as_str()
+        .or_else(|| br_val[0]["id"].as_str())
+        .unwrap();
+    let bd_id = bd_val["id"]
+        .as_str()
+        .or_else(|| bd_val[0]["id"].as_str())
+        .unwrap();
+
+    let br_update = workspace.run_br(
+        ["update", br_id, "--assignee", "alice", "--json"],
+        "update_assignee",
+    );
+    let bd_update = workspace.run_bd(
+        ["update", bd_id, "--assignee", "alice", "--json"],
+        "update_assignee",
+    );
+
+    assert!(
+        br_update.status.success(),
+        "br update assignee failed: {}",
+        br_update.stderr
+    );
+    assert!(
+        bd_update.status.success(),
+        "bd update assignee failed: {}",
+        bd_update.stderr
+    );
+
+    let br_show = workspace.run_br(["show", br_id, "--json"], "show_after_assignee");
+    let bd_show = workspace.run_bd(["show", bd_id, "--json"], "show_after_assignee");
+
+    let br_show_json = extract_json_payload(&br_show.stdout);
+    let bd_show_json = extract_json_payload(&bd_show.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_show_json).expect("parse");
+    let bd_val: Value = serde_json::from_str(&bd_show_json).expect("parse");
+
+    let br_assignee = br_val["assignee"]
+        .as_str()
+        .or_else(|| br_val[0]["assignee"].as_str());
+    let bd_assignee = bd_val["assignee"]
+        .as_str()
+        .or_else(|| bd_val[0]["assignee"].as_str());
+
+    assert_eq!(
+        br_assignee, bd_assignee,
+        "assignee mismatch after update: br={:?}, bd={:?}",
+        br_assignee, bd_assignee
+    );
+    assert_eq!(br_assignee, Some("alice"), "expected assignee alice");
+
+    info!("conformance_update_assignee passed");
 }
 
 #[test]
@@ -4293,6 +4666,75 @@ fn conformance_update_status() {
     );
 
     info!("conformance_update_status passed");
+}
+
+#[test]
+fn conformance_close_with_reason() {
+    common::init_test_logging();
+    info!("Starting conformance_close_with_reason test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_create = workspace.run_br(["create", "Close reason issue", "--json"], "create");
+    let bd_create = workspace.run_bd(["create", "Close reason issue", "--json"], "create");
+
+    let br_json = extract_json_payload(&br_create.stdout);
+    let bd_json = extract_json_payload(&bd_create.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_json).expect("parse");
+    let bd_val: Value = serde_json::from_str(&bd_json).expect("parse");
+
+    let br_id = br_val["id"]
+        .as_str()
+        .or_else(|| br_val[0]["id"].as_str())
+        .unwrap();
+    let bd_id = bd_val["id"]
+        .as_str()
+        .or_else(|| bd_val[0]["id"].as_str())
+        .unwrap();
+
+    let br_close = workspace.run_br(
+        ["close", br_id, "--reason", "done", "--json"],
+        "close_reason",
+    );
+    let bd_close = workspace.run_bd(
+        ["close", bd_id, "--reason", "done", "--json"],
+        "close_reason",
+    );
+
+    assert!(
+        br_close.status.success(),
+        "br close with reason failed: {}",
+        br_close.stderr
+    );
+    assert!(
+        bd_close.status.success(),
+        "bd close with reason failed: {}",
+        bd_close.stderr
+    );
+
+    let br_close_json = extract_json_payload(&br_close.stdout);
+    let bd_close_json = extract_json_payload(&bd_close.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_close_json).expect("parse");
+    let bd_val: Value = serde_json::from_str(&bd_close_json).expect("parse");
+
+    let br_reason = br_val["close_reason"]
+        .as_str()
+        .or_else(|| br_val[0]["close_reason"].as_str());
+    let bd_reason = bd_val["close_reason"]
+        .as_str()
+        .or_else(|| bd_val[0]["close_reason"].as_str());
+
+    assert_eq!(
+        br_reason, bd_reason,
+        "close_reason mismatch: br={:?}, bd={:?}",
+        br_reason, bd_reason
+    );
+    assert_eq!(br_reason, Some("done"), "expected close reason");
+
+    info!("conformance_close_with_reason passed");
 }
 
 // ============================================================================

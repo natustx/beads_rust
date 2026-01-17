@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn version_includes_name_and_version() {
-        let version = Cli::command().render_version().to_string();
+        let version = Cli::command().render_version();
         assert!(version.contains("br"));
         assert!(version.contains(env!("CARGO_PKG_VERSION")));
     }

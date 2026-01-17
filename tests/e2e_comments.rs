@@ -249,9 +249,9 @@ fn e2e_comments_add_empty() {
         // Either no comment was added, or an empty comment exists
         assert!(
             comments.is_empty()
-                || comments.iter().all(|c| {
-                    c["text"].as_str().map_or(true, |t| t.is_empty())
-                }),
+                || comments
+                    .iter()
+                    .all(|c| c["text"].as_str().is_none_or(str::is_empty)),
             "empty comment handling"
         );
     } else {
@@ -328,7 +328,7 @@ fn e2e_comments_special_characters() {
     assert!(text.contains("Quote:"), "should contain quote");
     assert!(text.contains("hello"), "should contain quoted text");
     assert!(
-        text.contains("apostrophe") || text.contains("'"),
+        text.contains("apostrophe") || text.contains('\''),
         "should contain apostrophe"
     );
 }
