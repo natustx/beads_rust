@@ -10719,6 +10719,33 @@ fn conformance_lint_json_shape() {
     info!("conformance_lint_json_shape passed");
 }
 
+#[test]
+fn conformance_lint_exit_code() {
+    common::init_test_logging();
+    info!("Starting conformance_lint_exit_code test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    // Create a bug with no description to trigger warnings
+    workspace.run_br(["create", "Lint bug", "--type", "bug"], "lint_bug_create");
+    workspace.run_bd(["create", "Lint bug", "--type", "bug"], "lint_bug_create");
+
+    let br_lint = workspace.run_br(["lint"], "lint_exit");
+    let bd_lint = workspace.run_bd(["lint"], "lint_exit");
+
+    assert!(
+        !br_lint.status.success(),
+        "br lint should exit nonzero with warnings"
+    );
+    assert!(
+        !bd_lint.status.success(),
+        "bd lint should exit nonzero with warnings"
+    );
+
+    info!("conformance_lint_exit_code passed");
+}
+
 // ============================================================================
 // DEFER/UNDEFER COMMAND TESTS
 // ============================================================================
