@@ -1,5 +1,6 @@
 mod common;
 
+use beads_rust::model::{Issue, IssueType, Priority, Status};
 use chrono::Utc;
 use common::cli::{BrWorkspace, extract_json_payload, run_br};
 use serde_json::Value;
@@ -14,6 +15,49 @@ fn parse_created_id(stdout: &str) -> String {
         .and_then(|rest| rest.split(':').next())
         .unwrap_or("");
     id_part.trim().to_string()
+}
+
+fn make_issue(id: &str, title: &str, now: chrono::DateTime<Utc>) -> Issue {
+    Issue {
+        id: id.to_string(),
+        title: title.to_string(),
+        status: Status::Open,
+        priority: Priority::MEDIUM,
+        issue_type: IssueType::Task,
+        created_at: now,
+        updated_at: now,
+        content_hash: None,
+        description: None,
+        design: None,
+        acceptance_criteria: None,
+        notes: None,
+        assignee: None,
+        owner: None,
+        estimated_minutes: None,
+        created_by: None,
+        closed_at: None,
+        close_reason: None,
+        closed_by_session: None,
+        due_at: None,
+        defer_until: None,
+        external_ref: None,
+        source_system: None,
+        deleted_at: None,
+        deleted_by: None,
+        delete_reason: None,
+        original_type: None,
+        compaction_level: None,
+        compacted_at: None,
+        compacted_at_commit: None,
+        original_size: None,
+        sender: None,
+        ephemeral: false,
+        pinned: false,
+        is_template: false,
+        labels: vec![],
+        dependencies: vec![],
+        comments: vec![],
+    }
 }
 
 #[test]
@@ -217,6 +261,109 @@ fn e2e_sync_import_staleness_and_force() {
     assert!(
         import_force.stdout.contains("Processed: 1 issues"),
         "sync import force missing processed count"
+    );
+}
+
+#[test]
+fn e2e_no_db_read_write() {
+    let workspace = BrWorkspace::new();
+
+    let init = run_br(&workspace, ["init"], "init");
+    assert!(init.status.success(), "init failed: {}", init.stderr);
+
+    let create = run_br(&workspace, ["create", "Seed issue"], "create_seed");
+    assert!(create.status.success(), "create failed: {}", create.stderr);
+
+    let sync = run_br(&workspace, ["sync", "--flush-only"], "sync_flush");
+    assert!(sync.status.success(), "sync flush failed: {}", sync.stderr);
+
+    let jsonl_path = workspace.root.join(".beads").join("issues.jsonl");
+    assert!(jsonl_path.exists(), "issues.jsonl missing");
+
+    let contents = fs::read_to_string(&jsonl_path).expect("read jsonl");
+    let mut issues: Vec<Value> = contents
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("parse jsonl"))
+        .collect();
+    assert!(!issues.is_empty(), "seed jsonl empty");
+
+    let now = Utc::now().to_rfc3339();
+    let mut injected = issues[0].clone();
+    injected["id"] = Value::String("bd-nodb1".to_string());
+    injected["title"] = Value::String("Injected no-db".to_string());
+    injected["created_at"] = Value::String(now.clone());
+    injected["updated_at"] = Value::String(now);
+    issues.push(injected);
+
+    let rewritten: Vec<String> = issues
+        .into_iter()
+        .map(|issue| serde_json::to_string(&issue).expect("serialize jsonl"))
+        .collect();
+    fs::write(&jsonl_path, rewritten.join("\n") + "\n").expect("write jsonl");
+
+    let list = run_br(&workspace, ["--no-db", "list", "--json"], "list_no_db");
+    assert!(
+        list.status.success(),
+        "list --no-db failed: {}",
+        list.stderr
+    );
+    let list_payload = extract_json_payload(&list.stdout);
+    let list_json: Vec<Value> = serde_json::from_str(&list_payload).expect("list json");
+    assert!(
+        list_json.iter().any(|item| item["id"] == "bd-nodb1"),
+        "no-db list missing injected issue"
+    );
+
+    let create_no_db = run_br(
+        &workspace,
+        ["--no-db", "create", "No DB create"],
+        "create_no_db",
+    );
+    assert!(
+        create_no_db.status.success(),
+        "create --no-db failed: {}",
+        create_no_db.stderr
+    );
+    let created_id = parse_created_id(&create_no_db.stdout);
+    assert!(!created_id.is_empty(), "no-db create missing id");
+
+    let updated = fs::read_to_string(&jsonl_path).expect("read jsonl after no-db");
+    assert!(
+        updated.contains("No DB create"),
+        "no-db create did not update JSONL"
+    );
+}
+
+#[test]
+fn e2e_no_db_mixed_prefix_error() {
+    let workspace = BrWorkspace::new();
+    let beads_dir = workspace.root.join(".beads");
+    fs::create_dir_all(&beads_dir).expect("create .beads");
+    let jsonl_path = beads_dir.join("issues.jsonl");
+
+    let now = Utc::now();
+    let issue_a = make_issue("aa-abc", "Alpha issue", now);
+    let issue_b = make_issue("bb-def", "Beta issue", now);
+    let lines = [
+        serde_json::to_string(&issue_a).expect("serialize issue a"),
+        serde_json::to_string(&issue_b).expect("serialize issue b"),
+    ];
+    fs::write(&jsonl_path, lines.join("\n") + "\n").expect("write jsonl");
+
+    let list = run_br(
+        &workspace,
+        ["--no-db", "list", "--json"],
+        "list_no_db_mixed",
+    );
+    assert!(
+        !list.status.success(),
+        "list --no-db should fail with mixed prefixes"
+    );
+    assert!(
+        list.stderr.contains("Mixed issue prefixes"),
+        "missing mixed prefix error: {}",
+        list.stderr
     );
 }
 

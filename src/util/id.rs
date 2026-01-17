@@ -1022,7 +1022,7 @@ mod tests {
         let nonce = 1001;
         
         // Ensure the fixed format is valid
-        let good_id = format!("{}-{}{}", prefix, hash, nonce);
+        let good_id = format!("{prefix}-{hash}{nonce}");
         assert!(parse_id(&good_id).is_ok(), "Fixed fallback format should parse correctly");
     }
 }
