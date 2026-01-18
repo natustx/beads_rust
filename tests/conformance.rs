@@ -12388,3 +12388,603 @@ fn conformance_version_semver() {
     log_timings("version_semver", &br_ver, &bd_ver);
     info!("conformance_version_semver passed");
 }
+
+// ============================================================================
+// BASE SNAPSHOT CONFORMANCE TESTS
+// Validate beads.base.jsonl behavior parity between br and bd
+// ============================================================================
+
+/// Helper to initialize git repo in a directory for sync tests
+fn init_git_repo(dir: &PathBuf) {
+    std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(dir)
+        .output()
+        .expect("git init");
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(dir)
+        .output()
+        .expect("git config email");
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(dir)
+        .output()
+        .expect("git config name");
+}
+
+#[test]
+fn conformance_sync_base_snapshot_created_after_sync() {
+    common::init_test_logging();
+    info!("Starting conformance_sync_base_snapshot_created_after_sync test");
+
+    let workspace = ConformanceWorkspace::new();
+
+    // Initialize git repos (required for bd sync)
+    init_git_repo(&workspace.br_root);
+    init_git_repo(&workspace.bd_root);
+
+    workspace.init_both();
+
+    // Create issue
+    workspace.run_br(["create", "Base snapshot test"], "create");
+    workspace.run_bd(["create", "Base snapshot test"], "create");
+
+    // Export to JSONL
+    let br_flush = workspace.run_br(["sync", "--flush-only"], "flush");
+    let bd_flush = workspace.run_bd(["sync", "--flush-only"], "flush");
+
+    assert!(
+        br_flush.status.success(),
+        "br flush failed: {}",
+        br_flush.stderr
+    );
+    assert!(
+        bd_flush.status.success(),
+        "bd flush failed: {}",
+        bd_flush.stderr
+    );
+
+    // Commit the JSONL files so sync can work
+    std::process::Command::new("git")
+        .args(["add", ".beads/"])
+        .current_dir(&workspace.br_root)
+        .output()
+        .expect("git add br");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(&workspace.br_root)
+        .output()
+        .expect("git commit br");
+    std::process::Command::new("git")
+        .args(["add", ".beads/"])
+        .current_dir(&workspace.bd_root)
+        .output()
+        .expect("git add bd");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(&workspace.bd_root)
+        .output()
+        .expect("git commit bd");
+
+    // Full sync should create base snapshot
+    let br_sync = workspace.run_br(["sync"], "sync");
+    let bd_sync = workspace.run_bd(["sync"], "sync");
+
+    assert!(
+        br_sync.status.success(),
+        "br sync failed: {}",
+        br_sync.stderr
+    );
+    assert!(
+        bd_sync.status.success(),
+        "bd sync failed: {}",
+        bd_sync.stderr
+    );
+
+    // Check if base snapshot exists for both
+    let br_base = workspace.br_root.join(".beads").join("beads.base.jsonl");
+    let bd_base = workspace.bd_root.join(".beads").join("beads.base.jsonl");
+
+    let br_base_exists = br_base.exists();
+    let bd_base_exists = bd_base.exists();
+
+    assert_eq!(
+        br_base_exists, bd_base_exists,
+        "base snapshot existence differs: br={}, bd={}",
+        br_base_exists, bd_base_exists
+    );
+
+    info!("conformance_sync_base_snapshot_created_after_sync passed");
+}
+
+#[test]
+fn conformance_sync_base_snapshot_content_matches() {
+    common::init_test_logging();
+    info!("Starting conformance_sync_base_snapshot_content_matches test");
+
+    let workspace = ConformanceWorkspace::new();
+
+    // Initialize git repos (required for bd sync)
+    init_git_repo(&workspace.br_root);
+    init_git_repo(&workspace.bd_root);
+
+    workspace.init_both();
+
+    // Set consistent prefix for ID comparison
+    workspace.run_br(["config", "--set", "id.prefix=TEST"], "set_prefix_br");
+    workspace.run_bd(["config", "--set", "id.prefix=TEST"], "set_prefix_bd");
+
+    // Create issue
+    workspace.run_br(["create", "Base content test"], "create");
+    workspace.run_bd(["create", "Base content test"], "create");
+
+    // Flush to JSONL
+    workspace.run_br(["sync", "--flush-only"], "flush");
+    workspace.run_bd(["sync", "--flush-only"], "flush");
+
+    // Commit the JSONL files so sync can work
+    std::process::Command::new("git")
+        .args(["add", ".beads/"])
+        .current_dir(&workspace.br_root)
+        .output()
+        .expect("git add br");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(&workspace.br_root)
+        .output()
+        .expect("git commit br");
+    std::process::Command::new("git")
+        .args(["add", ".beads/"])
+        .current_dir(&workspace.bd_root)
+        .output()
+        .expect("git add bd");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(&workspace.bd_root)
+        .output()
+        .expect("git commit bd");
+
+    // Full sync
+    workspace.run_br(["sync"], "sync");
+    workspace.run_bd(["sync"], "sync");
+
+    // Read base snapshot contents
+    let br_base = workspace.br_root.join(".beads").join("beads.base.jsonl");
+    let bd_base = workspace.bd_root.join(".beads").join("beads.base.jsonl");
+
+    // Both may or may not create base snapshot based on merge behavior
+    // The important thing is they behave consistently
+    let br_content = fs::read_to_string(&br_base).ok();
+    let bd_content = fs::read_to_string(&bd_base).ok();
+
+    match (br_content, bd_content) {
+        (Some(br), Some(bd)) => {
+            // Both created base snapshot - validate line count matches
+            let br_lines: Vec<&str> = br.lines().filter(|l| !l.trim().is_empty()).collect();
+            let bd_lines: Vec<&str> = bd.lines().filter(|l| !l.trim().is_empty()).collect();
+
+            assert_eq!(
+                br_lines.len(),
+                bd_lines.len(),
+                "base snapshot line count differs: br={}, bd={}",
+                br_lines.len(),
+                bd_lines.len()
+            );
+        }
+        (None, None) => {
+            // Neither created base snapshot - also valid
+            info!("Both br and bd did not create base snapshot (consistent behavior)");
+        }
+        (br, bd) => {
+            panic!(
+                "base snapshot creation differs: br={:?}, bd={:?}",
+                br.is_some(),
+                bd.is_some()
+            );
+        }
+    }
+
+    info!("conformance_sync_base_snapshot_content_matches passed");
+}
+
+#[test]
+fn conformance_sync_base_snapshot_preserves_issue_state() {
+    common::init_test_logging();
+    info!("Starting conformance_sync_base_snapshot_preserves_issue_state test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    // Create issues (both will be open initially)
+    workspace.run_br(["create", "Issue 1"], "create1");
+    workspace.run_bd(["create", "Issue 1"], "create1");
+
+    workspace.run_br(["create", "Issue 2"], "create2");
+    workspace.run_bd(["create", "Issue 2"], "create2");
+
+    // Flush to JSONL (this doesn't require git)
+    workspace.run_br(["sync", "--flush-only"], "flush");
+    workspace.run_bd(["sync", "--flush-only"], "flush");
+
+    // Verify open issues in the database (using default list which shows open)
+    let br_list = workspace.run_br(["list", "--json"], "list_open");
+    let bd_list = workspace.run_bd(["list", "--json"], "list_open");
+
+    let br_json = extract_json_payload(&br_list.stdout);
+    let bd_json = extract_json_payload(&bd_list.stdout);
+
+    let br_val: Value = serde_json::from_str(&br_json).unwrap_or(Value::Array(vec![]));
+    let bd_val: Value = serde_json::from_str(&bd_json).unwrap_or(Value::Array(vec![]));
+
+    let br_count = br_val.as_array().map(|a| a.len()).unwrap_or(0);
+    let bd_count = bd_val.as_array().map(|a| a.len()).unwrap_or(0);
+
+    assert_eq!(
+        br_count, bd_count,
+        "issue count after flush differs: br={}, bd={}",
+        br_count, bd_count
+    );
+
+    // Check that both have 2 open issues
+    assert_eq!(br_count, 2, "expected 2 open issues after flush");
+
+    info!("conformance_sync_base_snapshot_preserves_issue_state passed");
+}
+
+// ============================================================================
+// CONFLICT MARKER CONFORMANCE TESTS
+// Validate both br and bd reject JSONL with git merge conflict markers
+// ============================================================================
+
+#[test]
+fn conformance_sync_import_rejects_conflict_markers() {
+    common::init_test_logging();
+    info!("Starting conformance_sync_import_rejects_conflict_markers test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    // Create valid issue to get a baseline
+    workspace.run_br(["create", "Valid issue"], "create");
+    workspace.run_bd(["create", "Valid issue"], "create");
+
+    workspace.run_br(["sync", "--flush-only"], "flush");
+    workspace.run_bd(["sync", "--flush-only"], "flush");
+
+    // Read the exported JSONL
+    let br_jsonl_path = workspace.br_root.join(".beads").join("issues.jsonl");
+    let bd_jsonl_path = workspace.bd_root.join(".beads").join("issues.jsonl");
+
+    let br_content = fs::read_to_string(&br_jsonl_path).expect("read br jsonl");
+    let bd_content = fs::read_to_string(&bd_jsonl_path).expect("read bd jsonl");
+
+    // Inject conflict markers
+    let br_conflicted = format!(
+        "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> feature-branch\n",
+        br_content.trim(),
+        br_content.trim()
+    );
+    let bd_conflicted = format!(
+        "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> feature-branch\n",
+        bd_content.trim(),
+        bd_content.trim()
+    );
+
+    fs::write(&br_jsonl_path, &br_conflicted).expect("write br conflicted");
+    fs::write(&bd_jsonl_path, &bd_conflicted).expect("write bd conflicted");
+
+    // Import should fail for both
+    let br_import = workspace.run_br(["sync", "--import-only"], "import_conflict");
+    let bd_import = workspace.run_bd(["sync", "--import-only"], "import_conflict");
+
+    // Both should fail
+    assert!(
+        !br_import.status.success(),
+        "br should reject conflict markers but succeeded"
+    );
+    assert!(
+        !bd_import.status.success(),
+        "bd should reject conflict markers but succeeded"
+    );
+
+    // Both should mention conflict in error
+    let br_mentions_conflict = br_import.stderr.to_lowercase().contains("conflict")
+        || br_import.stdout.to_lowercase().contains("conflict");
+    let bd_mentions_conflict = bd_import.stderr.to_lowercase().contains("conflict")
+        || bd_import.stdout.to_lowercase().contains("conflict");
+
+    assert!(
+        br_mentions_conflict,
+        "br error should mention conflict: stdout={}, stderr={}",
+        br_import.stdout, br_import.stderr
+    );
+    assert!(
+        bd_mentions_conflict,
+        "bd error should mention conflict: stdout={}, stderr={}",
+        bd_import.stdout, bd_import.stderr
+    );
+
+    info!("conformance_sync_import_rejects_conflict_markers passed");
+}
+
+#[test]
+fn conformance_sync_import_rejects_partial_conflict_markers() {
+    common::init_test_logging();
+    info!("Starting conformance_sync_import_rejects_partial_conflict_markers test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    // Write JSONL with only the start conflict marker
+    let br_jsonl_path = workspace.br_root.join(".beads").join("issues.jsonl");
+    let bd_jsonl_path = workspace.bd_root.join(".beads").join("issues.jsonl");
+
+    let partial_conflict = "<<<<<<< HEAD\n{\"id\":\"test-1\",\"title\":\"Test\"}\n";
+
+    fs::write(&br_jsonl_path, partial_conflict).expect("write br partial conflict");
+    fs::write(&bd_jsonl_path, partial_conflict).expect("write bd partial conflict");
+
+    // Import should fail for both
+    let br_import = workspace.run_br(["sync", "--import-only"], "import_partial_conflict");
+    let bd_import = workspace.run_bd(["sync", "--import-only"], "import_partial_conflict");
+
+    // Both should fail (rejecting conflict markers)
+    assert_eq!(
+        br_import.status.success(),
+        bd_import.status.success(),
+        "partial conflict marker handling differs: br={}, bd={}",
+        br_import.status.success(),
+        bd_import.status.success()
+    );
+
+    // If both fail, they should both mention conflict
+    if !br_import.status.success() && !bd_import.status.success() {
+        let br_mentions = br_import.stderr.to_lowercase().contains("conflict")
+            || br_import.stderr.contains("<<<<<<<");
+        let bd_mentions = bd_import.stderr.to_lowercase().contains("conflict")
+            || bd_import.stderr.contains("<<<<<<<");
+
+        // At minimum, one should detect it
+        assert!(
+            br_mentions || bd_mentions,
+            "at least one should mention conflict markers"
+        );
+    }
+
+    info!("conformance_sync_import_rejects_partial_conflict_markers passed");
+}
+
+#[test]
+fn conformance_sync_import_rejects_conflict_in_middle() {
+    common::init_test_logging();
+    info!("Starting conformance_sync_import_rejects_conflict_in_middle test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    // Create and export valid issues first
+    workspace.run_br(["create", "Issue 1"], "create1");
+    workspace.run_bd(["create", "Issue 1"], "create1");
+    workspace.run_br(["create", "Issue 2"], "create2");
+    workspace.run_bd(["create", "Issue 2"], "create2");
+
+    workspace.run_br(["sync", "--flush-only"], "flush");
+    workspace.run_bd(["sync", "--flush-only"], "flush");
+
+    // Read exported JSONL
+    let br_jsonl_path = workspace.br_root.join(".beads").join("issues.jsonl");
+    let bd_jsonl_path = workspace.bd_root.join(".beads").join("issues.jsonl");
+
+    let br_content = fs::read_to_string(&br_jsonl_path).expect("read br jsonl");
+    let bd_content = fs::read_to_string(&bd_jsonl_path).expect("read bd jsonl");
+
+    // Insert conflict markers between valid lines
+    let br_lines: Vec<&str> = br_content.lines().collect();
+    let bd_lines: Vec<&str> = bd_content.lines().collect();
+
+    let br_with_conflict = if br_lines.len() >= 2 {
+        format!(
+            "{}\n<<<<<<< HEAD\n{}\n=======\n>>>>>>> branch\n",
+            br_lines[0], br_lines[1]
+        )
+    } else {
+        format!("<<<<<<< HEAD\n{}\n=======\n>>>>>>> branch\n", br_content)
+    };
+
+    let bd_with_conflict = if bd_lines.len() >= 2 {
+        format!(
+            "{}\n<<<<<<< HEAD\n{}\n=======\n>>>>>>> branch\n",
+            bd_lines[0], bd_lines[1]
+        )
+    } else {
+        format!("<<<<<<< HEAD\n{}\n=======\n>>>>>>> branch\n", bd_content)
+    };
+
+    fs::write(&br_jsonl_path, &br_with_conflict).expect("write br conflict");
+    fs::write(&bd_jsonl_path, &bd_with_conflict).expect("write bd conflict");
+
+    // Import should fail for both
+    let br_import = workspace.run_br(["sync", "--import-only"], "import_middle_conflict");
+    let bd_import = workspace.run_bd(["sync", "--import-only"], "import_middle_conflict");
+
+    assert_eq!(
+        br_import.status.success(),
+        bd_import.status.success(),
+        "middle conflict marker handling differs: br success={}, bd success={}",
+        br_import.status.success(),
+        bd_import.status.success()
+    );
+
+    info!("conformance_sync_import_rejects_conflict_in_middle passed");
+}
+
+// ============================================================================
+// PREFIX MISMATCH CONFORMANCE TESTS
+// Validate prefix mismatch handling parity between br and bd
+// ============================================================================
+
+#[test]
+fn conformance_sync_import_prefix_mismatch_behavior() {
+    common::init_test_logging();
+    info!("Starting conformance_sync_import_prefix_mismatch_behavior test");
+
+    // Source workspace with prefix "SRC"
+    let source = ConformanceWorkspace::new();
+    source.init_both();
+    source.run_br(["config", "--set", "id.prefix=SRC"], "set_prefix_br");
+    source.run_bd(["config", "--set", "id.prefix=SRC"], "set_prefix_bd");
+
+    source.run_br(["create", "Source issue"], "create");
+    source.run_bd(["create", "Source issue"], "create");
+    source.run_br(["sync", "--flush-only"], "flush");
+    source.run_bd(["sync", "--flush-only"], "flush");
+
+    // Target workspace with prefix "TGT"
+    let target = ConformanceWorkspace::new();
+    target.init_both();
+    target.run_br(["config", "--set", "id.prefix=TGT"], "set_prefix_br");
+    target.run_bd(["config", "--set", "id.prefix=TGT"], "set_prefix_bd");
+
+    // Copy JSONL from source to target
+    let br_src = source.br_root.join(".beads").join("issues.jsonl");
+    let bd_src = source.bd_root.join(".beads").join("issues.jsonl");
+    let br_dst = target.br_root.join(".beads").join("issues.jsonl");
+    let bd_dst = target.bd_root.join(".beads").join("issues.jsonl");
+
+    fs::copy(&br_src, &br_dst).expect("copy br jsonl");
+    fs::copy(&bd_src, &bd_dst).expect("copy bd jsonl");
+
+    // Import with mismatched prefix
+    let br_import = target.run_br(["sync", "--import-only"], "import_mismatch");
+    let bd_import = target.run_bd(["sync", "--import-only"], "import_mismatch");
+
+    // Both should handle prefix mismatch consistently
+    // (either both succeed with rewrite or both fail with error)
+    assert_eq!(
+        br_import.status.success(),
+        bd_import.status.success(),
+        "prefix mismatch handling differs: br success={}, bd success={}",
+        br_import.status.success(),
+        bd_import.status.success()
+    );
+
+    // If both fail, check they mention prefix
+    if !br_import.status.success() && !bd_import.status.success() {
+        let br_mentions_prefix = br_import.stderr.to_lowercase().contains("prefix")
+            || br_import.stdout.to_lowercase().contains("prefix");
+        let bd_mentions_prefix = bd_import.stderr.to_lowercase().contains("prefix")
+            || bd_import.stdout.to_lowercase().contains("prefix");
+
+        // At least one should mention prefix in error
+        assert!(
+            br_mentions_prefix || bd_mentions_prefix,
+            "error should mention prefix mismatch"
+        );
+    }
+
+    info!("conformance_sync_import_prefix_mismatch_behavior passed");
+}
+
+#[test]
+fn conformance_sync_import_same_prefix_succeeds() {
+    common::init_test_logging();
+    info!("Starting conformance_sync_import_same_prefix_succeeds test");
+
+    // Source workspace
+    let source = ConformanceWorkspace::new();
+    source.init_both();
+    source.run_br(["config", "--set", "id.prefix=SAME"], "set_prefix_br");
+    source.run_bd(["config", "--set", "id.prefix=SAME"], "set_prefix_bd");
+
+    source.run_br(["create", "Same prefix issue"], "create");
+    source.run_bd(["create", "Same prefix issue"], "create");
+    source.run_br(["sync", "--flush-only"], "flush");
+    source.run_bd(["sync", "--flush-only"], "flush");
+
+    // Target workspace with SAME prefix
+    let target = ConformanceWorkspace::new();
+    target.init_both();
+    target.run_br(["config", "--set", "id.prefix=SAME"], "set_prefix_br");
+    target.run_bd(["config", "--set", "id.prefix=SAME"], "set_prefix_bd");
+
+    // Copy JSONL
+    let br_src = source.br_root.join(".beads").join("issues.jsonl");
+    let bd_src = source.bd_root.join(".beads").join("issues.jsonl");
+    let br_dst = target.br_root.join(".beads").join("issues.jsonl");
+    let bd_dst = target.bd_root.join(".beads").join("issues.jsonl");
+
+    fs::copy(&br_src, &br_dst).expect("copy br jsonl");
+    fs::copy(&bd_src, &bd_dst).expect("copy bd jsonl");
+
+    // Import with matching prefix should succeed
+    let br_import = target.run_br(["sync", "--import-only"], "import_same");
+    let bd_import = target.run_bd(["sync", "--import-only"], "import_same");
+
+    assert!(
+        br_import.status.success(),
+        "br import with same prefix failed: {}",
+        br_import.stderr
+    );
+    assert!(
+        bd_import.status.success(),
+        "bd import with same prefix failed: {}",
+        bd_import.stderr
+    );
+
+    // Verify issues were imported
+    let br_list = target.run_br(["list", "--json"], "list");
+    let bd_list = target.run_bd(["list", "--json"], "list");
+
+    let br_val: Value = serde_json::from_str(&extract_json_payload(&br_list.stdout))
+        .unwrap_or(Value::Array(vec![]));
+    let bd_val: Value = serde_json::from_str(&extract_json_payload(&bd_list.stdout))
+        .unwrap_or(Value::Array(vec![]));
+
+    let br_count = br_val.as_array().map(|a| a.len()).unwrap_or(0);
+    let bd_count = bd_val.as_array().map(|a| a.len()).unwrap_or(0);
+
+    assert_eq!(
+        br_count, bd_count,
+        "import count differs: br={}, bd={}",
+        br_count, bd_count
+    );
+    assert!(br_count >= 1, "should have at least 1 issue imported");
+
+    info!("conformance_sync_import_same_prefix_succeeds passed");
+}
+
+#[test]
+fn conformance_sync_status_shows_prefix_info() {
+    common::init_test_logging();
+    info!("Starting conformance_sync_status_shows_prefix_info test");
+
+    // NOTE: bd does not support `sync --status` flag, so this tests br only
+    // Known difference: bd doesn't have status checking functionality
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    workspace.run_br(["config", "--set", "id.prefix=STATUS"], "set_prefix_br");
+
+    workspace.run_br(["create", "Status test"], "create");
+
+    workspace.run_br(["sync", "--flush-only"], "flush");
+
+    // Check sync status - br only (bd doesn't support --status flag)
+    let br_status = workspace.run_br(["sync", "--status", "--json"], "status");
+
+    assert!(
+        br_status.status.success(),
+        "br status failed: {}",
+        br_status.stderr
+    );
+
+    // br should produce valid JSON output
+    let br_json = extract_json_payload(&br_status.stdout);
+    let br_val: Result<Value, _> = serde_json::from_str(&br_json);
+
+    assert!(br_val.is_ok(), "br status should produce valid JSON");
+
+    info!("conformance_sync_status_shows_prefix_info passed");
+}

@@ -9,6 +9,7 @@
 mod common;
 
 use common::cli::{BrWorkspace, run_br};
+use std::fs;
 use tracing::info;
 
 // =============================================================================
@@ -426,4 +427,262 @@ fn e2e_completions_all_shells_have_help() {
         );
     }
     info!("e2e_completions_all_shells_have_help: done");
+}
+
+// =============================================================================
+// File Output Tests
+// =============================================================================
+
+#[test]
+fn e2e_completions_bash_file_output() {
+    common::init_test_logging();
+    info!("e2e_completions_bash_file_output: start");
+    // Generate bash completions to a file and verify content
+    let workspace = BrWorkspace::new();
+    let output_file = workspace.root.join("completions_bash.sh");
+
+    let completions = run_br(
+        &workspace,
+        ["completions", "bash", "-o", output_file.to_str().unwrap()],
+        "completions_bash_file",
+    );
+    assert!(
+        completions.status.success(),
+        "completions bash -o failed: {}",
+        completions.stderr
+    );
+
+    // Verify file was created
+    assert!(
+        output_file.exists(),
+        "completion file should exist at {}",
+        output_file.display()
+    );
+
+    // Verify file content
+    let file_content = fs::read_to_string(&output_file).expect("read completion file");
+    assert!(
+        file_content.contains("_br()"),
+        "bash completions file should define _br function"
+    );
+    assert!(
+        file_content.contains("COMPREPLY"),
+        "bash completions file should use COMPREPLY"
+    );
+    info!("e2e_completions_bash_file_output: done");
+}
+
+#[test]
+fn e2e_completions_zsh_file_output() {
+    common::init_test_logging();
+    info!("e2e_completions_zsh_file_output: start");
+    // Generate zsh completions to a file
+    let workspace = BrWorkspace::new();
+    let output_file = workspace.root.join("_br");
+
+    let completions = run_br(
+        &workspace,
+        ["completions", "zsh", "-o", output_file.to_str().unwrap()],
+        "completions_zsh_file",
+    );
+    assert!(
+        completions.status.success(),
+        "completions zsh -o failed: {}",
+        completions.stderr
+    );
+
+    // Verify file was created
+    assert!(
+        output_file.exists(),
+        "completion file should exist at {}",
+        output_file.display()
+    );
+
+    // Verify file content
+    let file_content = fs::read_to_string(&output_file).expect("read completion file");
+    assert!(
+        file_content.contains("#compdef") || file_content.contains("_br"),
+        "zsh completions file should have compdef or _br function"
+    );
+    info!("e2e_completions_zsh_file_output: done");
+}
+
+#[test]
+fn e2e_completions_fish_file_output() {
+    common::init_test_logging();
+    info!("e2e_completions_fish_file_output: start");
+    // Generate fish completions to a file
+    let workspace = BrWorkspace::new();
+    let output_file = workspace.root.join("br.fish");
+
+    let completions = run_br(
+        &workspace,
+        ["completions", "fish", "-o", output_file.to_str().unwrap()],
+        "completions_fish_file",
+    );
+    assert!(
+        completions.status.success(),
+        "completions fish -o failed: {}",
+        completions.stderr
+    );
+
+    // Verify file was created and contains fish-specific syntax
+    assert!(output_file.exists(), "completion file should exist");
+    let file_content = fs::read_to_string(&output_file).expect("read completion file");
+    assert!(
+        file_content.contains("complete"),
+        "fish completions file should use 'complete' command"
+    );
+    info!("e2e_completions_fish_file_output: done");
+}
+
+#[test]
+fn e2e_completions_powershell_file_output() {
+    common::init_test_logging();
+    info!("e2e_completions_powershell_file_output: start");
+    // Generate PowerShell completions to a file
+    let workspace = BrWorkspace::new();
+    let output_file = workspace.root.join("br.ps1");
+
+    let completions = run_br(
+        &workspace,
+        [
+            "completions",
+            "powershell",
+            "-o",
+            output_file.to_str().unwrap(),
+        ],
+        "completions_powershell_file",
+    );
+    assert!(
+        completions.status.success(),
+        "completions powershell -o failed: {}",
+        completions.stderr
+    );
+
+    // Verify file was created and contains PowerShell-specific syntax
+    assert!(output_file.exists(), "completion file should exist");
+    let file_content = fs::read_to_string(&output_file).expect("read completion file");
+    assert!(
+        file_content.contains("Register-ArgumentCompleter")
+            || file_content.contains("$scriptBlock"),
+        "powershell completions file should have argument completer"
+    );
+    info!("e2e_completions_powershell_file_output: done");
+}
+
+#[test]
+fn e2e_completions_file_output_matches_stdout() {
+    common::init_test_logging();
+    info!("e2e_completions_file_output_matches_stdout: start");
+    // Verify that file output matches stdout output
+    let workspace = BrWorkspace::new();
+    let output_file = workspace.root.join("completions_bash_test.sh");
+
+    // Get stdout output
+    let stdout_run = run_br(&workspace, ["completions", "bash"], "completions_stdout");
+    assert!(
+        stdout_run.status.success(),
+        "completions bash stdout failed"
+    );
+
+    // Get file output
+    let file_run = run_br(
+        &workspace,
+        ["completions", "bash", "-o", output_file.to_str().unwrap()],
+        "completions_file",
+    );
+    assert!(
+        file_run.status.success(),
+        "completions bash -o failed: {}",
+        file_run.stderr
+    );
+
+    let file_content = fs::read_to_string(&output_file).expect("read completion file");
+
+    // Content should match (stdout and file should be identical)
+    assert_eq!(
+        stdout_run.stdout.trim(),
+        file_content.trim(),
+        "file output should match stdout output"
+    );
+    info!("e2e_completions_file_output_matches_stdout: done");
+}
+
+#[test]
+fn e2e_completions_file_output_overwrites_existing() {
+    common::init_test_logging();
+    info!("e2e_completions_file_output_overwrites_existing: start");
+    // Verify that file output overwrites an existing file
+    let workspace = BrWorkspace::new();
+    let output_file = workspace.root.join("completions_overwrite.sh");
+
+    // Create existing file with dummy content
+    fs::write(&output_file, "dummy content").expect("write dummy file");
+
+    // Generate completions to the same file
+    let completions = run_br(
+        &workspace,
+        ["completions", "bash", "-o", output_file.to_str().unwrap()],
+        "completions_overwrite",
+    );
+    assert!(
+        completions.status.success(),
+        "completions bash -o failed: {}",
+        completions.stderr
+    );
+
+    // Verify file was overwritten
+    let file_content = fs::read_to_string(&output_file).expect("read completion file");
+    assert!(
+        !file_content.contains("dummy content"),
+        "file should be overwritten, not appended"
+    );
+    assert!(
+        file_content.contains("_br()"),
+        "file should contain new completion script"
+    );
+    info!("e2e_completions_file_output_overwrites_existing: done");
+}
+
+#[test]
+fn e2e_completions_all_shells_file_output() {
+    common::init_test_logging();
+    info!("e2e_completions_all_shells_file_output: start");
+    // Test file output for all supported shells
+    let workspace = BrWorkspace::new();
+    let shells = [
+        ("bash", "br.bash"),
+        ("zsh", "_br"),
+        ("fish", "br.fish"),
+        ("powershell", "br.ps1"),
+        ("elvish", "br.elv"),
+    ];
+
+    for (shell, filename) in shells {
+        let output_file = workspace.root.join(filename);
+
+        let completions = run_br(
+            &workspace,
+            ["completions", shell, "-o", output_file.to_str().unwrap()],
+            &format!("completions_{shell}_file_all"),
+        );
+        assert!(
+            completions.status.success(),
+            "completions {shell} -o failed: {}",
+            completions.stderr
+        );
+        assert!(
+            output_file.exists(),
+            "completion file for {shell} should exist at {}",
+            output_file.display()
+        );
+
+        let file_content = fs::read_to_string(&output_file).expect("read completion file");
+        assert!(
+            !file_content.is_empty(),
+            "completion file for {shell} should not be empty"
+        );
+    }
+    info!("e2e_completions_all_shells_file_output: done");
 }
