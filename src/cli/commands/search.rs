@@ -289,8 +289,8 @@ fn apply_sort(issues: &mut [IssueWithCounts], sort: Option<&str>) -> Result<()> 
 
     match sort_key {
         "priority" => issues.sort_by_key(|iwc| iwc.issue.priority),
-        "created_at" => issues.sort_by_key(|iwc| iwc.issue.created_at),
-        "updated_at" => issues.sort_by_key(|iwc| iwc.issue.updated_at),
+        "created_at" => issues.sort_by_key(|iwc| std::cmp::Reverse(iwc.issue.created_at)),
+        "updated_at" => issues.sort_by_key(|iwc| std::cmp::Reverse(iwc.issue.updated_at)),
         "title" => issues.sort_by(|a, b| {
             a.issue
                 .title
@@ -414,5 +414,30 @@ mod tests {
         assert_eq!(items[0].issue.title, "Alpha");
         items.reverse();
         assert_eq!(items[0].issue.title, "Beta");
+    }
+
+    #[test]
+    fn test_sort_created_at_desc_default() {
+        let t1 = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        let t2 = Utc.with_ymd_and_hms(2025, 1, 2, 0, 0, 0).unwrap();
+
+        let issue_old = make_issue("bd-old", "Old", None, t1);
+        let issue_new = make_issue("bd-new", "New", None, t2);
+
+        let mut items = vec![
+            IssueWithCounts {
+                issue: issue_old,
+                dependency_count: 0,
+                dependent_count: 0,
+            },
+            IssueWithCounts {
+                issue: issue_new,
+                dependency_count: 0,
+                dependent_count: 0,
+            },
+        ];
+
+        apply_sort(&mut items, Some("created_at")).expect("sort");
+        assert_eq!(items[0].issue.id, "bd-new");
     }
 }

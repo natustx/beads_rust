@@ -145,16 +145,16 @@ fn build_filters(args: &ListArgs) -> Result<ListFilters> {
         )
     };
 
-    // Parse priority values
+    // Parse priority values (invalid values should error, not be silently dropped)
     let priorities = if args.priority.is_empty() {
         None
     } else {
-        let parsed: Vec<Priority> = args
-            .priority
-            .iter()
-            .filter_map(|p| p.parse().ok())
-            .collect();
-        Some(parsed)
+        Some(
+            args.priority
+                .iter()
+                .map(|p| p.parse())
+                .collect::<Result<Vec<Priority>>>()?,
+        )
     };
 
     let include_closed = args.all

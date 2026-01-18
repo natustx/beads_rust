@@ -1080,7 +1080,7 @@ impl SqliteStorage {
         // Find all issues that are blocked by a dependency
         // An issue is blocked if:
         // 1. It has a blocking-type dependency (blocks, parent-child, conditional-blocks, waits-for)
-        // 2. The blocker issue has a blocking status (open, in_progress, blocked, deferred)
+        // 2. The blocker issue has a blocking status (anything NOT closed/tombstone)
         //
         // For conditional-blocks, we also need to check if the blocker closed with failure
         // but for simplicity in this initial implementation, we treat it like blocks.
@@ -1093,8 +1093,8 @@ impl SqliteStorage {
                   WHERE d.type IN ('blocks', 'conditional-blocks', 'waits-for')
                     AND d.depends_on_id NOT LIKE 'external:%'
                     AND (
-                      -- The blocker is in a blocking state
-                      i.status IN ('open', 'in_progress', 'blocked', 'deferred')
+                      -- The blocker is in a blocking state (anything not terminal)
+                      i.status NOT IN ('closed', 'tombstone')
                       -- Or it's an external dependency (not in our DB)
                       OR i.id IS NULL
                     )

@@ -221,8 +221,16 @@ fn print_text_output(
             // Note: bd uses "dependencies" even for count=1 (grammatically incorrect but we match for conformance)
             let count = bi.blocked_by.len();
             // Extract just the IDs from blocker refs (strip :status suffix)
-            let ids: Vec<&str> = bi.blocked_by.iter().map(|r| blocker_id_from_ref(r)).collect();
-            println!("  Blocked by {} open dependencies: [{}]", count, ids.join(", "));
+            let ids: Vec<&str> = bi
+                .blocked_by
+                .iter()
+                .map(|r| blocker_id_from_ref(r))
+                .collect();
+            println!(
+                "  Blocked by {} open dependencies: [{}]",
+                count,
+                ids.join(", ")
+            );
         }
     }
 }
