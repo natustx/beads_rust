@@ -16,15 +16,28 @@ pub struct StaleIssue {
 }
 
 /// Minimal issue output for ready command (bd parity).
+///
 /// Contains only the fields that bd's ready command outputs.
-/// Does NOT include: compaction_level, original_size, dependency_count, dependent_count
+/// Does NOT include: `compaction_level`, `original_size`, `dependency_count`, `dependent_count`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadyIssue {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acceptance_criteria: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignee: Option<String>,
     pub created_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimated_minutes: Option<i32>,
     pub id: String,
     pub issue_type: IssueType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
     pub priority: Priority,
     pub status: Status,
     pub title: String,
@@ -34,10 +47,16 @@ pub struct ReadyIssue {
 impl From<&Issue> for ReadyIssue {
     fn from(issue: &Issue) -> Self {
         Self {
+            acceptance_criteria: issue.acceptance_criteria.clone(),
+            assignee: issue.assignee.clone(),
             created_at: issue.created_at,
             created_by: issue.created_by.clone(),
+            description: issue.description.clone(),
+            estimated_minutes: issue.estimated_minutes,
             id: issue.id.clone(),
             issue_type: issue.issue_type.clone(),
+            notes: issue.notes.clone(),
+            owner: issue.owner.clone(),
             priority: issue.priority,
             status: issue.status.clone(),
             title: issue.title.clone(),
@@ -47,8 +66,9 @@ impl From<&Issue> for ReadyIssue {
 }
 
 /// Minimal issue output for blocked command (bd parity).
-/// Contains only the fields that bd's blocked command outputs, plus blocked_by info.
-/// Does NOT include: compaction_level, original_size
+///
+/// Contains only the fields that bd's blocked command outputs, plus `blocked_by` info.
+/// Does NOT include: `compaction_level`, `original_size`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockedIssueOutput {
     pub blocked_by: Vec<String>,
@@ -56,6 +76,8 @@ pub struct BlockedIssueOutput {
     pub created_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub id: String,
     pub issue_type: IssueType,
     pub priority: Priority,
