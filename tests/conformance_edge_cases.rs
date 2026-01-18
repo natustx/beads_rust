@@ -23,7 +23,7 @@ use tracing::info;
 #[path = "conformance.rs"]
 mod conformance;
 
-use conformance::{CompareMode, ConformanceWorkspace, compare_json, bd_available};
+use conformance::{CompareMode, ConformanceWorkspace, bd_available, compare_json};
 
 /// Skip test if bd binary is not available (used in CI where only br is built)
 macro_rules! skip_if_no_bd {
