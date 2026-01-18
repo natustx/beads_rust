@@ -169,11 +169,7 @@ fn e2e_robot_flag_list() {
 
     // List with --json flag (provides robot-parseable output)
     let list = run_br(&workspace, ["list", "--json"], "list_json");
-    assert!(
-        list.status.success(),
-        "list --json failed: {}",
-        list.stderr
-    );
+    assert!(list.status.success(), "list --json failed: {}", list.stderr);
 
     // JSON mode should output valid JSON to stdout
     let payload = extract_json_payload(&list.stdout);

@@ -36,6 +36,7 @@ CONFORMANCE_TESTS=(
     conformance
     conformance_edge_cases
     conformance_labels_comments
+    conformance_schema
 )
 
 # Configuration

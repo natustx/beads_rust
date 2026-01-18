@@ -22,7 +22,8 @@
 use beads_rust::model::{Issue, IssueType, Priority, Status};
 use beads_rust::storage::{IssueUpdate, ListFilters, ReadyFilters, ReadySortPolicy, SqliteStorage};
 use chrono::Utc;
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use std::hint::black_box;
 use std::io::Cursor;
 use std::sync::Once;
 use std::time::Instant;

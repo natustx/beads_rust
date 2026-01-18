@@ -109,7 +109,10 @@ fn format_ready_line(
     // Match bd format: {index}. [● P{n}] [{type}] {id}: {title}
     let priority_badge_plain = format!("[● {}]", crate::format::format_priority(&issue.priority));
     let type_badge_plain = format!("[{}]", issue.issue_type.as_str());
-    let prefix_plain = format!("{index}. {priority_badge_plain} {type_badge_plain} {}: ", issue.id);
+    let prefix_plain = format!(
+        "{index}. {priority_badge_plain} {type_badge_plain} {}: ",
+        issue.id
+    );
     let title = max_width.map_or_else(
         || issue.title.clone(),
         |width| {

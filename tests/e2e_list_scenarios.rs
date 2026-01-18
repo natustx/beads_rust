@@ -10,6 +10,13 @@
 //! - Output formats (text, JSON, CSV)
 //! - Field selection with --fields
 
+#![allow(
+    clippy::doc_markdown,
+    clippy::too_many_lines,
+    clippy::uninlined_format_args,
+    clippy::manual_range_contains
+)]
+
 mod common;
 
 use common::cli::{BrWorkspace, extract_json_payload, run_br};
@@ -187,7 +194,14 @@ fn setup_diverse_workspace() -> (BrWorkspace, Vec<String>) {
     let id8 = parse_created_id(&issue8.stdout);
     run_br(
         &workspace,
-        ["update", &id8, "--status", "deferred", "--defer", "2100-01-01T00:00:00Z"],
+        [
+            "update",
+            &id8,
+            "--status",
+            "deferred",
+            "--defer",
+            "2100-01-01T00:00:00Z",
+        ],
         "update_feature_deferred",
     );
     ids.push(id8);
@@ -203,7 +217,11 @@ fn setup_diverse_workspace() -> (BrWorkspace, Vec<String>) {
 fn list_filter_by_status_open() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "--status", "open", "--json"], "list_open");
+    let list = run_br(
+        &workspace,
+        ["list", "--status", "open", "--json"],
+        "list_open",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -219,14 +237,22 @@ fn list_filter_by_status_open() {
     }
 
     // Should find at least 4 open issues (excluding closed, in_progress, deferred)
-    assert!(json.len() >= 4, "Expected at least 4 open issues, got {}", json.len());
+    assert!(
+        json.len() >= 4,
+        "Expected at least 4 open issues, got {}",
+        json.len()
+    );
 }
 
 #[test]
 fn list_filter_by_status_closed() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "--status", "closed", "--json"], "list_closed");
+    let list = run_br(
+        &workspace,
+        ["list", "--status", "closed", "--json"],
+        "list_closed",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -259,7 +285,11 @@ fn list_filter_by_status_in_progress() {
 fn list_filter_by_status_deferred() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "--status", "deferred", "--json"], "list_deferred");
+    let list = run_br(
+        &workspace,
+        ["list", "--status", "deferred", "--json"],
+        "list_deferred",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -297,7 +327,11 @@ fn list_include_closed_shows_all() {
 fn list_filter_by_type_bug() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "-t", "bug", "--all", "--json"], "list_bugs");
+    let list = run_br(
+        &workspace,
+        ["list", "-t", "bug", "--all", "--json"],
+        "list_bugs",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -319,7 +353,11 @@ fn list_filter_by_type_bug() {
 fn list_filter_by_type_feature() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "-t", "feature", "--all", "--json"], "list_features");
+    let list = run_br(
+        &workspace,
+        ["list", "-t", "feature", "--all", "--json"],
+        "list_features",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -335,7 +373,11 @@ fn list_filter_by_type_feature() {
 fn list_filter_by_type_task() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "-t", "task", "--all", "--json"], "list_tasks");
+    let list = run_br(
+        &workspace,
+        ["list", "-t", "task", "--all", "--json"],
+        "list_tasks",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -360,14 +402,23 @@ fn list_filter_by_priority_p0() {
 
     assert_eq!(json.len(), 1, "Expected 1 P0 issue");
     assert_eq!(json[0]["priority"], 0);
-    assert!(json[0]["title"].as_str().unwrap().contains("Critical login bug"));
+    assert!(
+        json[0]["title"]
+            .as_str()
+            .unwrap()
+            .contains("Critical login bug")
+    );
 }
 
 #[test]
 fn list_filter_by_priority_p1() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "-p", "1", "--all", "--json"], "list_p1");
+    let list = run_br(
+        &workspace,
+        ["list", "-p", "1", "--all", "--json"],
+        "list_p1",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -413,7 +464,11 @@ fn list_filter_by_multiple_priorities() {
 fn list_filter_by_assignee() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "--assignee", "alice", "--json"], "list_alice");
+    let list = run_br(
+        &workspace,
+        ["list", "--assignee", "alice", "--json"],
+        "list_alice",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -430,7 +485,11 @@ fn list_filter_by_unassigned() {
     let (workspace, _ids) = setup_diverse_workspace();
 
     // The --unassigned flag filters for issues without an assignee
-    let list = run_br(&workspace, ["list", "--unassigned", "--json"], "list_unassigned");
+    let list = run_br(
+        &workspace,
+        ["list", "--unassigned", "--json"],
+        "list_unassigned",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -454,7 +513,11 @@ fn list_filter_by_unassigned() {
 fn list_filter_by_label_single() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "--label", "backend", "--json"], "list_backend");
+    let list = run_br(
+        &workspace,
+        ["list", "--label", "backend", "--json"],
+        "list_backend",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -479,8 +542,17 @@ fn list_filter_by_label_multiple() {
     let json: Vec<Value> = serde_json::from_str(&payload).expect("parse json");
 
     // Should find the one issue with both labels
-    assert_eq!(json.len(), 1, "Expected 1 issue with both 'backend' and 'api' labels");
-    assert!(json[0]["title"].as_str().unwrap().contains("API rate limiting"));
+    assert_eq!(
+        json.len(),
+        1,
+        "Expected 1 issue with both 'backend' and 'api' labels"
+    );
+    assert!(
+        json[0]["title"]
+            .as_str()
+            .unwrap()
+            .contains("API rate limiting")
+    );
 }
 
 // =============================================================================
@@ -512,7 +584,14 @@ fn list_combined_filters_assignee_and_label() {
 
     let list = run_br(
         &workspace,
-        ["list", "--assignee", "alice", "--label", "critical", "--json"],
+        [
+            "list",
+            "--assignee",
+            "alice",
+            "--label",
+            "critical",
+            "--json",
+        ],
         "list_alice_critical",
     );
     assert!(list.status.success(), "list failed: {}", list.stderr);
@@ -520,8 +599,17 @@ fn list_combined_filters_assignee_and_label() {
     let payload = extract_json_payload(&list.stdout);
     let json: Vec<Value> = serde_json::from_str(&payload).expect("parse json");
 
-    assert_eq!(json.len(), 1, "Expected 1 issue assigned to alice with critical label");
-    assert!(json[0]["title"].as_str().unwrap().contains("Critical login bug"));
+    assert_eq!(
+        json.len(),
+        1,
+        "Expected 1 issue assigned to alice with critical label"
+    );
+    assert!(
+        json[0]["title"]
+            .as_str()
+            .unwrap()
+            .contains("Critical login bug")
+    );
 }
 
 // =============================================================================
@@ -657,7 +745,11 @@ fn list_sort_by_created_at_asc() {
 fn list_with_limit() {
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(&workspace, ["list", "--limit", "3", "--json"], "list_limit_3");
+    let list = run_br(
+        &workspace,
+        ["list", "--limit", "3", "--json"],
+        "list_limit_3",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -671,7 +763,11 @@ fn list_with_limit_zero_unlimited() {
     let (workspace, _ids) = setup_diverse_workspace();
 
     // --limit 0 should return all issues (unlimited)
-    let list = run_br(&workspace, ["list", "--limit", "0", "--json"], "list_limit_0");
+    let list = run_br(
+        &workspace,
+        ["list", "--limit", "0", "--json"],
+        "list_limit_0",
+    );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let payload = extract_json_payload(&list.stdout);
@@ -679,7 +775,11 @@ fn list_with_limit_zero_unlimited() {
 
     // Should get all non-closed issues (default excludes closed)
     // We have 8 total issues, 1 closed, so at least 5 open ones
-    assert!(json.len() >= 5, "Expected at least 5 issues with unlimited limit, got {}", json.len());
+    assert!(
+        json.len() >= 5,
+        "Expected at least 5 issues with unlimited limit, got {}",
+        json.len()
+    );
 }
 
 // =============================================================================
@@ -699,10 +799,7 @@ fn list_text_output_format() {
         "Text output should contain issue IDs"
     );
     // Should also contain some issue content
-    assert!(
-        !list.stdout.is_empty(),
-        "Text output should not be empty"
-    );
+    assert!(!list.stdout.is_empty(), "Text output should not be empty");
 }
 
 #[test]
@@ -721,8 +818,14 @@ fn list_json_output_format() {
         assert!(first.get("id").is_some(), "JSON missing 'id' field");
         assert!(first.get("title").is_some(), "JSON missing 'title' field");
         assert!(first.get("status").is_some(), "JSON missing 'status' field");
-        assert!(first.get("priority").is_some(), "JSON missing 'priority' field");
-        assert!(first.get("issue_type").is_some(), "JSON missing 'issue_type' field");
+        assert!(
+            first.get("priority").is_some(),
+            "JSON missing 'priority' field"
+        );
+        assert!(
+            first.get("issue_type").is_some(),
+            "JSON missing 'issue_type' field"
+        );
     }
 }
 
@@ -748,13 +851,22 @@ fn list_csv_with_custom_fields() {
 
     let list = run_br(
         &workspace,
-        ["list", "--format", "csv", "--fields", "id,title,priority,assignee"],
+        [
+            "list",
+            "--format",
+            "csv",
+            "--fields",
+            "id,title,priority,assignee",
+        ],
         "list_csv_fields",
     );
     assert!(list.status.success(), "list failed: {}", list.stderr);
 
     let header = list.stdout.lines().next().unwrap_or("");
-    assert_eq!(header, "id,title,priority,assignee", "CSV header doesn't match requested fields");
+    assert_eq!(
+        header, "id,title,priority,assignee",
+        "CSV header doesn't match requested fields"
+    );
 }
 
 // =============================================================================
@@ -870,7 +982,7 @@ fn list_issue_with_special_chars_in_title() {
     assert_eq!(json.len(), 1);
     let title = json[0]["title"].as_str().unwrap();
     assert!(title.contains("\"quoted\""), "Title should contain quotes");
-    assert!(title.contains("&"), "Title should contain ampersand");
+    assert!(title.contains('&'), "Title should contain ampersand");
     assert!(
         title.contains("<special>"),
         "Title should contain angle brackets"

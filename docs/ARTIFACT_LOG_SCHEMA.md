@@ -157,14 +157,89 @@ validator.validate_summary_file("target/test-artifacts/e2e/test/summary.json")?;
 {"timestamp":"2026-01-17T12:34:56.200Z","event_type":"command","label":"create","binary":"br","args":["create","--title","Test issue"],"cwd":"/tmp/test","exit_code":0,"success":true,"duration_ms":15,"stdout_len":32,"stderr_len":0,"stdout_path":"0002_create.stdout","stderr_path":null,"snapshot_path":null}
 ```
 
+## Report Generation
+
+### Generating Human-Friendly Reports
+
+The artifact report indexer generates HTML and Markdown reports from test artifacts
+for faster triage of test failures.
+
+**Task: beads_rust-x7on**
+
+#### Quick Start
+
+```bash
+# 1. Run tests with artifacts enabled
+HARNESS_ARTIFACTS=1 cargo test e2e_sync
+
+# 2. Generate reports
+./scripts/generate-report.sh
+
+# 3. Open the report
+open target/reports/report.html
+```
+
+#### Manual Report Generation
+
+```bash
+REPORT_ARTIFACTS_DIR=target/test-artifacts \
+REPORT_OUTPUT_DIR=target/reports \
+cargo test --test e2e_report_generation -- --nocapture --ignored generate_and_save_report
+```
+
+#### Programmatic Usage
+
+```rust
+use common::report_indexer::{ArtifactIndexer, write_reports};
+
+// Create indexer
+let indexer = ArtifactIndexer::new("target/test-artifacts");
+
+// Generate report
+let report = indexer.generate_report()?;
+
+// Access report data
+println!("Total tests: {}", report.total_tests);
+println!("Pass rate: {:.1}%", report.pass_rate());
+
+// Write HTML and Markdown files
+let (md_path, html_path) = write_reports(&report, "target/reports")?;
+```
+
+#### Report Contents
+
+The generated reports include:
+
+- **Summary statistics**: Total tests, pass/fail counts, duration
+- **Suite breakdown**: Per-suite results with test tables
+- **Failed test details**: Failure reasons, failed commands, artifact links
+- **Slowest tests**: Top 10 slowest tests for performance analysis
+
+#### Configuration Options
+
+```rust
+use common::report_indexer::{ArtifactIndexer, IndexerConfig};
+
+let config = IndexerConfig {
+    artifact_root: PathBuf::from("target/test-artifacts"),
+    failures_only: true,   // Only include failed tests
+    max_tests: 100,        // Limit tests per suite (0 = unlimited)
+    include_commands: true, // Include command details
+    include_snapshots: true, // Include snapshot metrics
+};
+
+let indexer = ArtifactIndexer::with_config(config);
+```
+
 ## References
 
 - [E2E_COVERAGE_MATRIX.md](E2E_COVERAGE_MATRIX.md) - Test coverage mapping
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Error codes and JSON shapes
 - [tests/common/harness.rs](../tests/common/harness.rs) - Harness implementation
+- [tests/common/report_indexer.rs](../tests/common/report_indexer.rs) - Report indexer implementation
 
 ---
 
-*Generated: 2026-01-17*
-*Task: beads_rust-r23m*
-*Agent: SilentFalcon (opus-4.5)*
+*Updated: 2026-01-18*
+*Tasks: beads_rust-r23m, beads_rust-x7on*
+*Agents: SilentFalcon (opus-4.5), Opus-C (opus-4.5)*

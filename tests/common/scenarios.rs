@@ -443,7 +443,7 @@ impl Default for BenchmarkConfig {
         Self {
             warmup_iterations: 1,
             measured_iterations: 3,
-            include_bd: std::env::var("BENCH_INCLUDE_BD").map_or(false, |v| v == "1"),
+            include_bd: std::env::var("BENCH_INCLUDE_BD").is_ok_and(|v| v == "1"),
             measure_rss: std::env::var("BENCH_MEASURE_RSS").map_or(true, |v| v != "0"),
             measure_io: std::env::var("BENCH_MEASURE_IO").map_or(true, |v| v != "0"),
             min_duration_ms: 0,
@@ -473,14 +473,14 @@ impl BenchmarkConfig {
     }
 
     /// Builder: set iterations
-    pub fn with_iterations(mut self, warmup: u32, measured: u32) -> Self {
+    pub const fn with_iterations(mut self, warmup: u32, measured: u32) -> Self {
         self.warmup_iterations = warmup;
         self.measured_iterations = measured;
         self
     }
 
     /// Builder: include bd
-    pub fn with_bd(mut self, include: bool) -> Self {
+    pub const fn with_bd(mut self, include: bool) -> Self {
         self.include_bd = include;
         self
     }
@@ -538,11 +538,11 @@ pub struct RunStatistics {
 // ============================================================================
 
 /// Measure peak RSS from /proc/<pid>/status on Linux.
-/// Returns VmHWM (high water mark) which is the peak resident set size.
+/// Returns `VmHWM` (high water mark) which is the peak resident set size.
 #[cfg(target_os = "linux")]
 pub fn measure_peak_rss(pid: u32) -> Option<u64> {
     use std::fs;
-    let status_path = format!("/proc/{}/status", pid);
+    let status_path = format!("/proc/{pid}/status");
     let content = fs::read_to_string(&status_path).ok()?;
 
     for line in content.lines() {
@@ -583,6 +583,7 @@ pub fn measure_io_sizes(workspace_root: &std::path::Path) -> (Option<u64>, Optio
 }
 
 /// Compute statistics from a vector of durations.
+#[allow(clippy::cast_precision_loss)]
 pub fn compute_statistics(durations: &[u128], rss_values: &[Option<u64>]) -> RunStatistics {
     let n = durations.len();
     if n == 0 {
@@ -599,12 +600,12 @@ pub fn compute_statistics(durations: &[u128], rss_values: &[Option<u64>]) -> Run
 
     // Sort for min/max/median
     let mut sorted = durations.to_vec();
-    sorted.sort();
+    sorted.sort_unstable();
 
     let min_ms = sorted[0];
     let max_ms = sorted[n - 1];
     let median_ms = if n % 2 == 0 {
-        (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+        u128::midpoint(sorted[n / 2 - 1], sorted[n / 2])
     } else {
         sorted[n / 2]
     };
@@ -637,10 +638,10 @@ pub fn compute_statistics(durations: &[u128], rss_values: &[Option<u64>]) -> Run
         if rss_vals.is_empty() {
             None
         } else {
-            rss_vals.sort();
+            rss_vals.sort_unstable();
             let rn = rss_vals.len();
             Some(if rn % 2 == 0 {
-                (rss_vals[rn / 2 - 1] + rss_vals[rn / 2]) / 2
+                u64::midpoint(rss_vals[rn / 2 - 1], rss_vals[rn / 2])
             } else {
                 rss_vals[rn / 2]
             })
@@ -811,17 +812,15 @@ impl BenchmarkRunner {
             // Write summary JSON
             let summary_path = artifacts_dir.join(format!("{}_summary.json", scenario.name));
             let mut file = fs::File::create(&summary_path)?;
-            let json = serde_json::to_string_pretty(&summary)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let json = serde_json::to_string_pretty(&summary).map_err(std::io::Error::other)?;
             file.write_all(json.as_bytes())?;
 
             // Write per-run JSONL
             let runs_path = artifacts_dir.join(format!("{}_runs.jsonl", scenario.name));
             let mut runs_file = fs::File::create(&runs_path)?;
             for run in &summary.runs {
-                let line = serde_json::to_string(run)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                writeln!(runs_file, "{}", line)?;
+                let line = serde_json::to_string(run).map_err(std::io::Error::other)?;
+                writeln!(runs_file, "{line}")?;
             }
         }
 
@@ -951,8 +950,8 @@ impl Scenario {
 /// Filter for selecting scenarios by tags.
 ///
 /// Supports include/exclude logic:
-/// - If include_tags is non-empty, only scenarios with matching tags are selected
-/// - If exclude_tags is non-empty, scenarios with any excluded tag are skipped
+/// - If `include_tags` is non-empty, only scenarios with matching tags are selected
+/// - If `exclude_tags` is non-empty, scenarios with any excluded tag are skipped
 /// - Exclude takes precedence over include
 ///
 /// Environment variables:
@@ -961,7 +960,7 @@ impl Scenario {
 /// - `HARNESS_TAG_MATCH`: "any" (default) or "all" for include matching
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScenarioFilter {
-    /// Tags to include (scenario must have at least one, or all if match_mode is All)
+    /// Tags to include (scenario must have at least one, or all if `match_mode` is All)
     pub include_tags: Vec<String>,
     /// Tags to exclude (scenario must not have any)
     pub exclude_tags: Vec<String>,
@@ -1049,7 +1048,7 @@ impl ScenarioFilter {
     }
 
     /// Builder: set match mode.
-    pub fn with_match_mode(mut self, mode: TagMatchMode) -> Self {
+    pub const fn with_match_mode(mut self, mode: TagMatchMode) -> Self {
         self.match_mode = mode;
         self
     }
@@ -1134,12 +1133,12 @@ impl ScenarioRunner {
     pub fn new(mode: ExecutionMode) -> Self {
         Self {
             mode,
-            artifacts_enabled: std::env::var("HARNESS_ARTIFACTS").map_or(false, |v| v == "1"),
+            artifacts_enabled: std::env::var("HARNESS_ARTIFACTS").is_ok_and(|v| v == "1"),
             filter: ScenarioFilter::from_env(),
         }
     }
 
-    pub fn with_artifacts(mut self, enabled: bool) -> Self {
+    pub const fn with_artifacts(mut self, enabled: bool) -> Self {
         self.artifacts_enabled = enabled;
         self
     }
@@ -1151,7 +1150,7 @@ impl ScenarioRunner {
     }
 
     /// Get the current filter.
-    pub fn filter(&self) -> &ScenarioFilter {
+    pub const fn filter(&self) -> &ScenarioFilter {
         &self.filter
     }
 
@@ -1210,7 +1209,7 @@ impl ScenarioRunner {
         let mut workspace = TestWorkspace::new("e2e", &scenario.name);
 
         if let ScenarioSetup::Dataset(dataset) = scenario.setup {
-            if let Err(err) = populate_workspace_with_dataset(&mut workspace, dataset) {
+            if let Err(err) = populate_workspace_with_dataset(&workspace, dataset) {
                 return ScenarioResult {
                     passed: false,
                     mode: self.mode,
@@ -1291,6 +1290,7 @@ impl ScenarioRunner {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn run_conformance(&self, scenario: &Scenario) -> ScenarioResult {
         let mut workspace = HarnessConformanceWorkspace::new("conformance", &scenario.name);
 
@@ -1310,7 +1310,7 @@ impl ScenarioRunner {
                 };
             }
         } else if let ScenarioSetup::Dataset(dataset) = scenario.setup {
-            if let Err(err) = populate_conformance_with_dataset(&mut workspace, dataset) {
+            if let Err(err) = populate_conformance_with_dataset(&workspace, dataset) {
                 return ScenarioResult {
                     passed: false,
                     mode: self.mode,
@@ -1419,7 +1419,7 @@ impl ScenarioRunner {
         let mut workspace = TestWorkspace::new("benchmark", &scenario.name);
 
         if let ScenarioSetup::Dataset(dataset) = scenario.setup {
-            if let Err(err) = populate_workspace_with_dataset(&mut workspace, dataset) {
+            if let Err(err) = populate_workspace_with_dataset(&workspace, dataset) {
                 return ScenarioResult {
                     passed: false,
                     mode: self.mode,
@@ -1543,6 +1543,7 @@ fn check_invariants(invariants: &Invariants, result: &CommandResult) -> Vec<Stri
 }
 
 /// Compare br and bd outputs using the specified mode and normalization.
+#[allow(clippy::too_many_lines)]
 fn compare_outputs(
     br_result: &CommandResult,
     bd_result: &CommandResult,
@@ -1561,7 +1562,7 @@ fn compare_outputs(
     match compare_mode {
         CompareMode::ExitCodeOnly => {
             let matched = br_result.exit_code == bd_result.exit_code;
-            return (
+            (
                 ComparisonResult {
                     matched,
                     br_json: None,
@@ -1576,7 +1577,7 @@ fn compare_outputs(
                     },
                 },
                 normalization_log,
-            );
+            )
         }
 
         CompareMode::ExactJson => {
@@ -1595,8 +1596,8 @@ fn compare_outputs(
             (
                 ComparisonResult {
                     matched,
-                    br_json: Some(br.clone()),
-                    bd_json: Some(bd.clone()),
+                    br_json: Some(br),
+                    bd_json: Some(bd),
                     diff_description: if matched {
                         None
                     } else {
@@ -1639,17 +1640,17 @@ fn compare_outputs(
             (
                 ComparisonResult {
                     matched,
-                    br_json: Some(br.clone()),
-                    bd_json: Some(bd.clone()),
+                    br_json: Some(br),
+                    bd_json: Some(bd),
                     diff_description: if matched {
                         // Log tolerance info even on match for debugging visibility
-                        if !tolerance_issues.is_empty() {
+                        if tolerance_issues.is_empty() {
+                            None
+                        } else {
                             Some(format!(
                                 "Note: timestamp drift detected (masked): {}",
                                 tolerance_issues.join("; ")
                             ))
-                        } else {
-                            None
                         }
                     } else {
                         Some("Normalized JSON mismatch".to_string())
@@ -1677,10 +1678,7 @@ fn compare_outputs(
                 let br_val = br.get(field);
                 let bd_val = bd.get(field);
                 if br_val != bd_val {
-                    mismatches.push(format!(
-                        "Field '{}': br={:?}, bd={:?}",
-                        field, br_val, bd_val
-                    ));
+                    mismatches.push(format!("Field '{field}': br={br_val:?}, bd={bd_val:?}"));
                 }
             }
 
@@ -1835,7 +1833,7 @@ fn snapshot_workspace(root: &Path) -> HashMap<String, FileFingerprint> {
             }
             let metadata = entry.metadata().ok();
             let is_dir = entry.file_type().is_dir();
-            let size = metadata.as_ref().map_or(0, |m| m.len());
+            let size = metadata.as_ref().map_or(0, std::fs::Metadata::len);
             let modified = metadata.and_then(|m| m.modified().ok());
             entries.insert(
                 rel_str,
@@ -1899,11 +1897,10 @@ fn run_scenario_command(
     command: &ScenarioCommand,
     label_suffix: Option<&str>,
 ) -> CommandResult {
-    let label = if let Some(suffix) = label_suffix {
-        format!("{}_{}", command.label, suffix)
-    } else {
-        command.label.clone()
-    };
+    let label = label_suffix.map_or_else(
+        || command.label.clone(),
+        |suffix| format!("{}_{}", command.label, suffix),
+    );
 
     match (command.env.is_empty(), command.stdin.as_ref()) {
         (true, None) => workspace.run_br(&command.args, &label),
@@ -2109,7 +2106,7 @@ fn check_timestamp_tolerance_inner(
                         if let (Ok(br_dt), Ok(bd_dt)) =
                             (parse_timestamp(br_str), parse_timestamp(bd_str))
                         {
-                            let diff = (br_dt - bd_dt).num_seconds().abs() as u64;
+                            let diff = (br_dt - bd_dt).num_seconds().unsigned_abs();
                             if diff > tolerance.as_secs() {
                                 issues.push(format!(
                                     "timestamp drift at {field_path}: br={br_str} bd={bd_str} diff={diff}s"
@@ -2830,7 +2827,7 @@ mod tests {
     #[test]
     fn test_timestamp_tolerance_within_range() {
         let rules = NormalizationRules {
-            mask_fields: ["created_at".to_string()].into_iter().collect(),
+            mask_fields: std::iter::once("created_at".to_string()).collect(),
             timestamp_tolerance: Some(Duration::from_secs(10)),
             ..Default::default()
         };
@@ -2851,7 +2848,7 @@ mod tests {
     #[test]
     fn test_timestamp_tolerance_exceeded() {
         let rules = NormalizationRules {
-            mask_fields: ["created_at".to_string()].into_iter().collect(),
+            mask_fields: std::iter::once("created_at".to_string()).collect(),
             timestamp_tolerance: Some(Duration::from_secs(5)),
             ..Default::default()
         };
@@ -2873,7 +2870,7 @@ mod tests {
     #[test]
     fn test_timestamp_tolerance_nested() {
         let rules = NormalizationRules {
-            mask_fields: ["updated_at".to_string()].into_iter().collect(),
+            mask_fields: std::iter::once("updated_at".to_string()).collect(),
             timestamp_tolerance: Some(Duration::from_secs(60)),
             ..Default::default()
         };

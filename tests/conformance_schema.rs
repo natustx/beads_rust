@@ -534,7 +534,7 @@ fn compare_metadata(workspace: &SchemaWorkspace) -> Result<(), String> {
 /// This is acceptable - br uses skip_serializing_if = "is_empty" for these.
 const KNOWN_JSONL_BD_ONLY_FIELDS: &[&str] = &[
     "created_by", // br skips when empty, bd always includes
-    // Add more fields here as needed
+                  // Add more fields here as needed
 ];
 
 /// Compare JSONL field presence for an issue
@@ -583,7 +583,10 @@ fn compare_jsonl_fields(workspace: &SchemaWorkspace) -> Result<(), String> {
         // Log known differences for visibility
         for field in &bd_only {
             if KNOWN_JSONL_BD_ONLY_FIELDS.contains(&field.as_str()) {
-                info!("Known JSONL difference: field '{}' in bd but not br (skip_serializing_if)", field);
+                info!(
+                    "Known JSONL difference: field '{}' in bd but not br (skip_serializing_if)",
+                    field
+                );
             }
         }
 
@@ -1098,9 +1101,11 @@ fn is_known_column_diff(diff: &ColumnDiff) -> bool {
     }
 
     // Check other tables for known differences
-    KNOWN_OTHER_TABLE_DIFFS.iter().any(|(table, col, diff_type)| {
-        diff.table == *table && diff.column == *col && diff.diff_type == *diff_type
-    })
+    KNOWN_OTHER_TABLE_DIFFS
+        .iter()
+        .any(|(table, col, diff_type)| {
+            diff.table == *table && diff.column == *col && diff.diff_type == *diff_type
+        })
 }
 
 #[test]
@@ -1149,10 +1154,16 @@ fn conformance_schema_full_comparison() {
     let known_table_count = comparison.tables_bd_only.len() - unexpected_table_diffs.len();
     let known_column_count = comparison.column_diffs.len() - unexpected_column_diffs.len();
     if known_table_count > 0 {
-        info!("{} known table differences (Gastown features)", known_table_count);
+        info!(
+            "{} known table differences (Gastown features)",
+            known_table_count
+        );
     }
     if known_column_count > 0 {
-        info!("{} known column differences (Gastown features, type/notnull)", known_column_count);
+        info!(
+            "{} known column differences (Gastown features, type/notnull)",
+            known_column_count
+        );
     }
 
     // Assert no unexpected differences
