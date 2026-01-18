@@ -36,11 +36,12 @@ pub enum ExecutionMode {
 }
 
 /// How to compare JSON outputs in conformance mode.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum CompareMode {
     /// JSON outputs must be byte-identical after stable sort
     ExactJson,
     /// Ignore volatile fields (timestamps, IDs), compare structure
+    #[default]
     NormalizedJson,
     /// Only check that specific fields match
     ContainsFields(Vec<String>),
@@ -54,13 +55,8 @@ pub enum CompareMode {
     StructureOnly,
 }
 
-impl Default for CompareMode {
-    fn default() -> Self {
-        Self::NormalizedJson
-    }
-}
-
 /// Fields that are volatile and should be normalized.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Default)]
 pub struct NormalizationRules {
     /// Fields to replace with fixed placeholder (e.g., timestamps)
@@ -261,6 +257,7 @@ impl NormalizationRules {
 }
 
 /// Expected invariants for a scenario.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Default)]
 pub struct Invariants {
     /// Command must succeed (exit 0)
@@ -298,21 +295,22 @@ impl Invariants {
         }
     }
 
-    pub fn with_no_git_ops(mut self) -> Self {
+    pub const fn with_no_git_ops(mut self) -> Self {
         self.no_git_ops = true;
         self
     }
 
-    pub fn with_path_confinement(mut self) -> Self {
+    pub const fn with_path_confinement(mut self) -> Self {
         self.path_confinement = true;
         self
     }
 }
 
 /// Setup configuration for a scenario.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ScenarioSetup {
     /// Start with a fresh (empty) workspace, run `br init`
+    #[default]
     Fresh,
     /// Copy from a known dataset
     Dataset(KnownDataset),
@@ -320,16 +318,10 @@ pub enum ScenarioSetup {
     Commands(Vec<ScenarioCommand>),
 }
 
-impl Default for ScenarioSetup {
-    fn default() -> Self {
-        Self::Fresh
-    }
-}
-
 /// A command to run as part of a scenario.
 #[derive(Debug, Clone)]
 pub struct ScenarioCommand {
-    /// Command arguments (e.g., ["create", "Test issue", "--priority", "1"])
+    /// Command arguments (e.g., `["create", "Test issue", "--priority", "1"]`)
     pub args: Vec<String>,
     /// Environment variables to set
     pub env: Vec<(String, String)>,
