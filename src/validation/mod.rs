@@ -16,6 +16,10 @@ use crate::error::{BeadsError, ValidationError};
 use crate::model::{Comment, Dependency, Issue, Priority};
 use std::path::Path;
 
+const MAX_ID_PREFIX_LEN: usize = 10;
+const MAX_ID_HASH_LEN: usize = 40;
+const MAX_ID_LENGTH: usize = MAX_ID_PREFIX_LEN + 1 + MAX_ID_HASH_LEN;
+
 /// Validates issue fields and invariants.
 pub struct IssueValidator;
 
@@ -28,12 +32,15 @@ impl IssueValidator {
     pub fn validate(issue: &Issue) -> Result<(), Vec<ValidationError>> {
         let mut errors = Vec::new();
 
-        // ID: Required, max 50 chars, prefix-hash format.
+        // ID: Required, max length, prefix-hash format.
         if issue.id.trim().is_empty() {
             errors.push(ValidationError::new("id", "cannot be empty"));
         }
-        if issue.id.len() > 50 {
-            errors.push(ValidationError::new("id", "exceeds 50 characters"));
+        if issue.id.len() > MAX_ID_LENGTH {
+            errors.push(ValidationError::new(
+                "id",
+                format!("exceeds {MAX_ID_LENGTH} characters"),
+            ));
         }
         if !issue.id.is_empty() && !is_valid_id_format(&issue.id) {
             errors.push(ValidationError::new(
@@ -256,7 +263,7 @@ pub fn is_valid_id_format(id: &str) -> bool {
         return false;
     };
 
-    if prefix.is_empty() || prefix.len() > 10 {
+    if prefix.is_empty() || prefix.len() > MAX_ID_PREFIX_LEN {
         return false;
     }
 
@@ -268,7 +275,7 @@ pub fn is_valid_id_format(id: &str) -> bool {
     }
 
     // Allow longer hashes for hierarchical IDs (e.g., "0v1.1.1.1")
-    if hash.is_empty() || hash.len() > 40 {
+    if hash.is_empty() || hash.len() > MAX_ID_HASH_LEN {
         return false;
     }
 

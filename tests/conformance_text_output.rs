@@ -679,7 +679,7 @@ fn conformance_text_show_not_found() {
     workspace.init_both();
 
     let br_show = workspace.run_br(["show", "nonexistent-id"], "show");
-    let bd_show = workspace.run_bd(["show", "nonexistent-id"], "show");
+    let _bd_show = workspace.run_bd(["show", "nonexistent-id"], "show");
 
     // INTENTIONAL DIFFERENCE: br returns error (exit 3), bd returns success (exit 0)
     // br's behavior is more correct - errors should have non-zero exit codes

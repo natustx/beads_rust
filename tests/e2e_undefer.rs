@@ -22,8 +22,14 @@ fn test_soft_defer_behavior() {
     assert!(update.status.success());
 
     // Check status is still open?
-    let show = run_br(&workspace, ["show", id], "show");
-    assert!(show.stdout.contains("[open]"), "Status should remain open");
+    // Use JSON for reliable checking (text output format varies)
+    let show = run_br(&workspace, ["show", id, "--json"], "show");
+    let json: serde_json::Value = serde_json::from_str(&show.stdout).expect("parse json");
+    // show returns list of details
+    let issue_details = if json.is_array() { &json[0] } else { &json };
+    // Issue details are flattened, so status is at the top level
+    let status = issue_details["status"].as_str().expect("status string");
+    assert_eq!(status, "open", "Status should remain open");
 
     // Check ready - should be excluded
     let ready = run_br(&workspace, ["ready"], "ready");

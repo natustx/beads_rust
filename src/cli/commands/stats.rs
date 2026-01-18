@@ -410,14 +410,18 @@ fn print_text_output(output: &Statistics) {
         if let Some(avg_hours) = s.average_lead_time_hours {
             // Format like bd: "N.N hours" or "N days" for large values
             let formatted = if avg_hours >= 24.0 {
-                format!("{:.1} days", avg_hours / 24.0)
+                let avg_days = avg_hours / 24.0;
+                format!("{avg_days:.1} days")
             } else {
-                format!("{:.1} hours", avg_hours)
+                format!("{avg_hours:.1} hours")
             };
             println!("  Avg Lead Time:          {formatted}");
         }
         if s.tombstone_issues > 0 {
-            println!("  Deleted:                {} (tombstones)", s.tombstone_issues);
+            println!(
+                "  Deleted:                {} (tombstones)",
+                s.tombstone_issues
+            );
         }
     }
 

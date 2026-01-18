@@ -8,7 +8,7 @@
 use crate::cli::GraphArgs;
 use crate::config;
 use crate::error::{BeadsError, Result};
-use crate::model::Status;
+use crate::model::{DependencyType, Status};
 use crate::storage::{ListFilters, SqliteStorage};
 use crate::util::id::{IdResolver, ResolverConfig, find_matching_ids};
 use serde::Serialize;
@@ -119,8 +119,13 @@ fn graph_single(storage: &SqliteStorage, root_id: &str, compact: bool, json: boo
         // Get dependents (issues that depend on current_id)
         let mut dependents = storage.get_dependents_with_metadata(&current_id)?;
 
-        // Filter "blocks" type
-        dependents.retain(|dep| dep.dep_type == "blocks");
+        // Only include dependency types that affect ready work
+        dependents.retain(|dep| {
+            dep.dep_type
+                .parse::<DependencyType>()
+                .unwrap_or(DependencyType::Blocks)
+                .affects_ready_work()
+        });
 
         // Sort dependents to ensure deterministic DFS order (stack reverses order)
         dependents.sort_by(|a, b| a.priority.0.cmp(&b.priority.0).then(a.id.cmp(&b.id)));
@@ -226,6 +231,9 @@ fn graph_all(storage: &SqliteStorage, compact: bool, json: bool) -> Result<()> {
         // Get dependencies from bulk map
         if let Some(deps) = all_dependencies.get(&issue.id) {
             for dep in deps {
+                if !dep.dep_type.affects_ready_work() {
+                    continue;
+                }
                 let dep_id = &dep.depends_on_id;
                 // Only include edges within our issue set
                 if issue_set.contains(dep_id) {
