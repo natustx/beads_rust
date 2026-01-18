@@ -201,10 +201,16 @@ fn set_config_value(kv: &str, json_mode: bool) -> Result<()> {
     }
 
     // Load existing config or create new
+    // Note: Files with only YAML comments parse as Null, not as an error
     let mut config: serde_yaml::Value = if config_path.exists() {
         let contents = fs::read_to_string(&config_path)?;
-        serde_yaml::from_str(&contents)
-            .unwrap_or(serde_yaml::Value::Mapping(serde_yaml::Mapping::default()))
+        match serde_yaml::from_str(&contents) {
+            Ok(serde_yaml::Value::Null) => {
+                serde_yaml::Value::Mapping(serde_yaml::Mapping::default())
+            }
+            Ok(v) => v,
+            Err(_) => serde_yaml::Value::Mapping(serde_yaml::Mapping::default()),
+        }
     } else {
         serde_yaml::Value::Mapping(serde_yaml::Mapping::default())
     };
