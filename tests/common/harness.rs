@@ -446,7 +446,7 @@ impl ArtifactLogger {
         let run_id = format!("{:04}_{}", self.run_count, label);
 
         let stdout_path = if self.config.capture_stdout && !result.stdout.is_empty() {
-            let path = self.artifact_dir.join(format!("{}.stdout", run_id));
+            let path = self.artifact_dir.join(format!("{run_id}.stdout"));
             fs::write(&path, &result.stdout).ok();
             Some(path.display().to_string())
         } else {
@@ -454,7 +454,7 @@ impl ArtifactLogger {
         };
 
         let stderr_path = if self.config.capture_stderr && !result.stderr.is_empty() {
-            let path = self.artifact_dir.join(format!("{}.stderr", run_id));
+            let path = self.artifact_dir.join(format!("{run_id}.stderr"));
             fs::write(&path, &result.stderr).ok();
             Some(path.display().to_string())
         } else {
@@ -486,7 +486,7 @@ impl ArtifactLogger {
             return;
         }
 
-        let snapshot_path = self.artifact_dir.join(format!("{}.snapshot.json", label));
+        let snapshot_path = self.artifact_dir.join(format!("{label}.snapshot.json"));
         let entries = collect_file_tree(workspace_root);
 
         if let Ok(json) = serde_json::to_string_pretty(&entries) {
@@ -523,7 +523,7 @@ impl ArtifactLogger {
         {
             let mut writer = BufWriter::new(file);
             if let Ok(json) = serde_json::to_string(event) {
-                let _ = writeln!(writer, "{}", json);
+                let _ = writeln!(writer, "{json}");
             }
         }
     }
@@ -558,12 +558,12 @@ impl ArtifactLogger {
 
         if passed && !self.config.preserve_on_success {
             // Clean up detailed artifacts on success, keep only summary
-            for entry in fs::read_dir(&self.artifact_dir).into_iter().flatten() {
-                if let Ok(entry) = entry {
+            if let Ok(entries) = fs::read_dir(&self.artifact_dir) {
+                for entry in entries.flatten() {
                     let path = entry.path();
                     if path
                         .extension()
-                        .map_or(false, |e| e == "stdout" || e == "stderr")
+                        .is_some_and(|e| e == "stdout" || e == "stderr")
                     {
                         fs::remove_file(path).ok();
                     }
@@ -592,7 +592,7 @@ fn collect_file_tree(root: &Path) -> Vec<FileEntry> {
             let metadata = entry.metadata().ok();
             entries.push(FileEntry {
                 path: rel_str,
-                size: metadata.as_ref().map_or(0, |m| m.len()),
+                size: metadata.as_ref().map_or(0, std::fs::Metadata::len),
                 is_dir: entry.file_type().is_dir(),
             });
         }
@@ -811,7 +811,7 @@ impl TestWorkspace {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
-        let log_path = self.root.join("logs").join(format!("{}.log", label));
+        let log_path = self.root.join("logs").join(format!("{label}.log"));
         fs::create_dir_all(log_path.parent().unwrap()).ok();
 
         let log_content = format!(
@@ -864,14 +864,16 @@ impl TestWorkspace {
         cmd.env("HOME", &self.root);
 
         let start = Instant::now();
-        let output = cmd.output().expect(&format!("run {}", binary));
+        let output = cmd
+            .output()
+            .unwrap_or_else(|_| panic!("run {binary}"));
         let duration = start.elapsed();
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
-        let log_path = self.root.join("logs").join(format!("{}.log", label));
+        let log_path = self.root.join("logs").join(format!("{label}.log"));
         fs::create_dir_all(log_path.parent().unwrap()).ok();
 
         let log_content = format!(
@@ -1172,7 +1174,7 @@ impl ConformanceWorkspace {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
-        let log_path = self.log_dir.join(format!("{}.log", label));
+        let log_path = self.log_dir.join(format!("{label}.log"));
         let log_content = format!(
             "label: {}\nbinary: {}\nargs: {:?}\ncwd: {}\nexit_code: {}\nduration: {:?}\n\n--- stdout ---\n{}\n\n--- stderr ---\n{}",
             label,
@@ -1249,7 +1251,7 @@ impl ConformanceWorkspace {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
-        let log_path = self.log_dir.join(format!("{}.log", label));
+        let log_path = self.log_dir.join(format!("{label}.log"));
         let log_content = format!(
             "label: {}\nbinary: {}\nargs: {:?}\ncwd: {}\nexit_code: {}\nduration: {:?}\n\n--- stdout ---\n{}\n\n--- stderr ---\n{}",
             label,
@@ -1306,14 +1308,16 @@ impl ConformanceWorkspace {
         cmd.env("HOME", cwd);
 
         let start = Instant::now();
-        let output = cmd.output().expect(&format!("run {}", binary));
+        let output = cmd
+            .output()
+            .unwrap_or_else(|_| panic!("run {binary}"));
         let duration = start.elapsed();
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
-        let log_path = self.log_dir.join(format!("{}.log", label));
+        let log_path = self.log_dir.join(format!("{label}.log"));
         let log_content = format!(
             "label: {}\nbinary: {}\nargs: {:?}\ncwd: {}\nexit_code: {}\nduration: {:?}\n\n--- stdout ---\n{}\n\n--- stderr ---\n{}",
             label,
@@ -1380,7 +1384,7 @@ impl ConformanceWorkspace {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             let exit_code = output.status.code().unwrap_or(-1);
 
-            let log_path = self.log_dir.join(format!("{}.log", label));
+            let log_path = self.log_dir.join(format!("{label}.log"));
             let log_content = format!(
                 "label: {}\nbinary: {}\nargs: {:?}\ncwd: {}\nexit_code: {}\nduration: {:?}\n\n--- stdout ---\n{}\n\n--- stderr ---\n{}",
                 label,
@@ -1426,7 +1430,9 @@ impl ConformanceWorkspace {
         }
 
         let start = Instant::now();
-        let output = cmd.output().expect(&format!("run {}", binary));
+        let output = cmd
+            .output()
+            .unwrap_or_else(|_| panic!("run {binary}"));
         let duration = start.elapsed();
         build_result(output, duration)
     }
@@ -1690,11 +1696,11 @@ mod tests {
         let has_stdout = fs::read_dir(&artifact_dir)
             .expect("read artifact dir")
             .flatten()
-            .any(|entry| entry.path().extension().map_or(false, |e| e == "stdout"));
+            .any(|entry| entry.path().extension().is_some_and(|e| e == "stdout"));
         let has_stderr = fs::read_dir(&artifact_dir)
             .expect("read artifact dir")
             .flatten()
-            .any(|entry| entry.path().extension().map_or(false, |e| e == "stderr"));
+            .any(|entry| entry.path().extension().is_some_and(|e| e == "stderr"));
         assert!(has_stdout, "stdout artifact missing");
         assert!(has_stderr, "stderr artifact missing");
 
@@ -1704,11 +1710,11 @@ mod tests {
         let has_stdout = fs::read_dir(&artifact_dir)
             .expect("read artifact dir")
             .flatten()
-            .any(|entry| entry.path().extension().map_or(false, |e| e == "stdout"));
+            .any(|entry| entry.path().extension().is_some_and(|e| e == "stdout"));
         let has_stderr = fs::read_dir(&artifact_dir)
             .expect("read artifact dir")
             .flatten()
-            .any(|entry| entry.path().extension().map_or(false, |e| e == "stderr"));
+            .any(|entry| entry.path().extension().is_some_and(|e| e == "stderr"));
         assert!(!has_stdout, "stdout artifacts not cleaned on success");
         assert!(!has_stderr, "stderr artifacts not cleaned on success");
     }
