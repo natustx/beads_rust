@@ -127,8 +127,7 @@ impl Default for ArtifactConfig {
             capture_stdout: true,
             capture_stderr: true,
             capture_snapshots: true,
-            preserve_on_success: std::env::var("HARNESS_PRESERVE_SUCCESS")
-                .is_ok_and(|v| v == "1"),
+            preserve_on_success: std::env::var("HARNESS_PRESERVE_SUCCESS").is_ok_and(|v| v == "1"),
         }
     }
 }
@@ -864,9 +863,7 @@ impl TestWorkspace {
         cmd.env("HOME", &self.root);
 
         let start = Instant::now();
-        let output = cmd
-            .output()
-            .unwrap_or_else(|_| panic!("run {binary}"));
+        let output = cmd.output().unwrap_or_else(|_| panic!("run {binary}"));
         let duration = start.elapsed();
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -1001,7 +998,7 @@ impl ConformanceWorkspace {
             "br",
             &self.br_workspace.clone(),
             args,
-            &format!("br_{}", label),
+            &format!("br_{label}"),
         )
     }
 
@@ -1015,7 +1012,7 @@ impl ConformanceWorkspace {
             "bd",
             &self.bd_workspace.clone(),
             args,
-            &format!("bd_{}", label),
+            &format!("bd_{label}"),
         )
     }
 
@@ -1034,7 +1031,7 @@ impl ConformanceWorkspace {
             args,
             env_vars,
             None,
-            &format!("br_{}", label),
+            &format!("br_{label}"),
         )
     }
 
@@ -1050,7 +1047,7 @@ impl ConformanceWorkspace {
             args,
             std::iter::empty::<(String, String)>(),
             Some(input),
-            &format!("br_{}", label),
+            &format!("br_{label}"),
         )
     }
 
@@ -1075,7 +1072,7 @@ impl ConformanceWorkspace {
             args,
             env_vars,
             Some(input),
-            &format!("br_{}", label),
+            &format!("br_{label}"),
         )
     }
 
@@ -1094,7 +1091,7 @@ impl ConformanceWorkspace {
             args,
             env_vars,
             None,
-            &format!("bd_{}", label),
+            &format!("bd_{label}"),
         )
     }
 
@@ -1110,7 +1107,7 @@ impl ConformanceWorkspace {
             args,
             std::iter::empty::<(String, String)>(),
             Some(input),
-            &format!("bd_{}", label),
+            &format!("bd_{label}"),
         )
     }
 
@@ -1135,7 +1132,7 @@ impl ConformanceWorkspace {
             args,
             env_vars,
             Some(input),
-            &format!("bd_{}", label),
+            &format!("bd_{label}"),
         )
     }
 
@@ -1308,9 +1305,7 @@ impl ConformanceWorkspace {
         cmd.env("HOME", cwd);
 
         let start = Instant::now();
-        let output = cmd
-            .output()
-            .unwrap_or_else(|_| panic!("run {binary}"));
+        let output = cmd.output().unwrap_or_else(|_| panic!("run {binary}"));
         let duration = start.elapsed();
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -1430,9 +1425,7 @@ impl ConformanceWorkspace {
         }
 
         let start = Instant::now();
-        let output = cmd
-            .output()
-            .unwrap_or_else(|_| panic!("run {binary}"));
+        let output = cmd.output().unwrap_or_else(|_| panic!("run {binary}"));
         let duration = start.elapsed();
         build_result(output, duration)
     }

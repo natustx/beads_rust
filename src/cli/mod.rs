@@ -629,6 +629,7 @@ pub enum DepCommands {
     /// Add a dependency: <issue> depends on <depends-on>
     Add(DepAddArgs),
     /// Remove a dependency
+    #[command(visible_alias = "rm")]
     Remove(DepRemoveArgs),
     /// List dependencies of an issue
     List(DepListArgs),

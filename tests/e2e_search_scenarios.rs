@@ -11,7 +11,7 @@
 
 mod common;
 
-use common::cli::{extract_json_payload, run_br, BrWorkspace};
+use common::cli::{BrWorkspace, extract_json_payload, run_br};
 use serde_json::Value;
 
 fn parse_created_id(stdout: &str) -> String {
@@ -24,6 +24,7 @@ fn parse_created_id(stdout: &str) -> String {
 }
 
 /// Setup workspace with issues containing varied searchable content.
+#[allow(clippy::too_many_lines)]
 fn setup_search_workspace() -> (BrWorkspace, Vec<String>) {
     let workspace = BrWorkspace::new();
 
@@ -47,7 +48,11 @@ fn setup_search_workspace() -> (BrWorkspace, Vec<String>) {
     );
     assert!(issue1.status.success());
     let id1 = parse_created_id(&issue1.stdout);
-    run_br(&workspace, ["update", &id1, "--add-label", "auth"], "label_auth");
+    run_br(
+        &workspace,
+        ["update", &id1, "--add-label", "auth"],
+        "label_auth",
+    );
     ids.push(id1);
 
     // Issue 2: Authentication feature
@@ -65,7 +70,11 @@ fn setup_search_workspace() -> (BrWorkspace, Vec<String>) {
     );
     assert!(issue2.status.success());
     let id2 = parse_created_id(&issue2.stdout);
-    run_br(&workspace, ["update", &id2, "--add-label", "auth"], "label_auth2");
+    run_br(
+        &workspace,
+        ["update", &id2, "--add-label", "auth"],
+        "label_auth2",
+    );
     ids.push(id2);
 
     // Issue 3: Database related task
@@ -117,7 +126,11 @@ fn setup_search_workspace() -> (BrWorkspace, Vec<String>) {
     );
     assert!(issue5.status.success());
     let id5 = parse_created_id(&issue5.stdout);
-    run_br(&workspace, ["update", &id5, "--add-label", "api"], "label_api");
+    run_br(
+        &workspace,
+        ["update", &id5, "--add-label", "api"],
+        "label_api",
+    );
     ids.push(id5);
 
     // Issue 6: Closed issue
@@ -165,25 +178,28 @@ fn setup_search_workspace() -> (BrWorkspace, Vec<String>) {
 fn search_basic_single_word() {
     let (workspace, _ids) = setup_search_workspace();
 
-    let search = run_br(&workspace, ["search", "authentication", "--json"], "search_auth");
+    let search = run_br(
+        &workspace,
+        ["search", "authentication", "--json"],
+        "search_auth",
+    );
     assert!(search.status.success(), "search failed: {}", search.stderr);
 
     let payload = extract_json_payload(&search.stdout);
     let json: Vec<Value> = serde_json::from_str(&payload).expect("parse json");
 
     // Should find issues with "authentication" in title or description
-    assert!(json.len() >= 2, "Expected at least 2 authentication-related issues");
+    assert!(
+        json.len() >= 2,
+        "Expected at least 2 authentication-related issues"
+    );
 
     for issue in &json {
         let title = issue["title"].as_str().unwrap_or("").to_lowercase();
-        let desc = issue["description"]
-            .as_str()
-            .unwrap_or("")
-            .to_lowercase();
+        let desc = issue["description"].as_str().unwrap_or("").to_lowercase();
         assert!(
             title.contains("authentication") || title.contains("auth") || desc.contains("auth"),
-            "Result should contain 'auth' in title or description: {:?}",
-            issue
+            "Result should contain 'auth' in title or description: {issue:?}"
         );
     }
 }
@@ -218,14 +234,21 @@ fn search_multiple_words() {
     let (workspace, _ids) = setup_search_workspace();
 
     // Search for "Authentication" which appears in multiple issues
-    let search = run_br(&workspace, ["search", "Authentication", "--json"], "search_multi");
+    let search = run_br(
+        &workspace,
+        ["search", "Authentication", "--json"],
+        "search_multi",
+    );
     assert!(search.status.success(), "search failed: {}", search.stderr);
 
     let payload = extract_json_payload(&search.stdout);
     let json: Vec<Value> = serde_json::from_str(&payload).expect("parse json");
 
     // Should find issues containing "Authentication"
-    assert!(json.len() >= 2, "Should find at least 2 issues with 'Authentication'");
+    assert!(
+        json.len() >= 2,
+        "Should find at least 2 issues with 'Authentication'"
+    );
 }
 
 #[test]
@@ -283,12 +306,13 @@ fn search_with_type_filter() {
     let payload = extract_json_payload(&search.stdout);
     let json: Vec<Value> = serde_json::from_str(&payload).expect("parse json");
 
-    assert_eq!(json.len(), 1, "Should find exactly 1 authentication feature");
+    assert_eq!(
+        json.len(),
+        1,
+        "Should find exactly 1 authentication feature"
+    );
     assert_eq!(json[0]["issue_type"], "feature");
-    assert!(json[0]["title"]
-        .as_str()
-        .unwrap()
-        .contains("two-factor"));
+    assert!(json[0]["title"].as_str().unwrap().contains("two-factor"));
 }
 
 #[test]
@@ -324,10 +348,12 @@ fn search_with_label_filter() {
     let json: Vec<Value> = serde_json::from_str(&payload).expect("parse json");
 
     assert_eq!(json.len(), 1, "Should find 1 bug with auth label");
-    assert!(json[0]["title"]
-        .as_str()
-        .unwrap()
-        .contains("Authentication bug"));
+    assert!(
+        json[0]["title"]
+            .as_str()
+            .unwrap()
+            .contains("Authentication bug")
+    );
 }
 
 #[test]
@@ -351,7 +377,11 @@ fn search_include_closed() {
         ["search", "login", "--all", "--json"],
         "search_with_closed",
     );
-    assert!(search_with_closed.status.success(), "search --all failed: {}", search_with_closed.stderr);
+    assert!(
+        search_with_closed.status.success(),
+        "search --all failed: {}",
+        search_with_closed.stderr
+    );
 
     let payload_with_closed = extract_json_payload(&search_with_closed.stdout);
     let json_with_closed: Vec<Value> = serde_json::from_str(&payload_with_closed).expect("parse");
@@ -412,7 +442,10 @@ fn search_no_results() {
         ["search", "xyznonexistentterm123", "--json"],
         "search_no_results",
     );
-    assert!(search.status.success(), "search should succeed with no results");
+    assert!(
+        search.status.success(),
+        "search should succeed with no results"
+    );
 
     let payload = extract_json_payload(&search.stdout);
     let json: Vec<Value> = serde_json::from_str(&payload).expect("parse json");
@@ -445,7 +478,12 @@ fn search_special_characters() {
     // Create issue with special characters
     let create = run_br(
         &workspace,
-        ["create", "Fix C++ compiler warnings", "-d", "Address -Wall -Werror flags"],
+        [
+            "create",
+            "Fix C++ compiler warnings",
+            "-d",
+            "Address -Wall -Werror flags",
+        ],
         "create_cpp",
     );
     assert!(create.status.success());
@@ -479,10 +517,7 @@ fn search_before_init_fails() {
     let workspace = BrWorkspace::new();
 
     let search = run_br(&workspace, ["search", "test"], "search_no_init");
-    assert!(
-        !search.status.success(),
-        "search should fail before init"
-    );
+    assert!(!search.status.success(), "search should fail before init");
 }
 
 // =============================================================================
@@ -501,10 +536,7 @@ fn search_finds_content_in_description() {
     let json: Vec<Value> = serde_json::from_str(&payload).expect("parse json");
 
     assert_eq!(json.len(), 1, "Should find issue with TOTP in description");
-    assert!(json[0]["title"]
-        .as_str()
-        .unwrap()
-        .contains("two-factor"));
+    assert!(json[0]["title"].as_str().unwrap().contains("two-factor"));
 }
 
 #[test]
@@ -512,17 +544,18 @@ fn search_finds_content_in_title_only() {
     let (workspace, _ids) = setup_search_workspace();
 
     // "Dashboard" appears only in title
-    let search = run_br(&workspace, ["search", "Dashboard", "--json"], "search_title");
+    let search = run_br(
+        &workspace,
+        ["search", "Dashboard", "--json"],
+        "search_title",
+    );
     assert!(search.status.success(), "search failed: {}", search.stderr);
 
     let payload = extract_json_payload(&search.stdout);
     let json: Vec<Value> = serde_json::from_str(&payload).expect("parse json");
 
     assert_eq!(json.len(), 1, "Should find issue with Dashboard in title");
-    assert!(json[0]["title"]
-        .as_str()
-        .unwrap()
-        .contains("Dashboard"));
+    assert!(json[0]["title"].as_str().unwrap().contains("Dashboard"));
 }
 
 // =============================================================================
@@ -535,12 +568,7 @@ fn search_combined_multiple_filters() {
 
     let search = run_br(
         &workspace,
-        [
-            "search", "bug",
-            "--status", "open",
-            "-t", "bug",
-            "--json",
-        ],
+        ["search", "bug", "--status", "open", "-t", "bug", "--json"],
         "search_combined",
     );
     assert!(search.status.success(), "search failed: {}", search.stderr);

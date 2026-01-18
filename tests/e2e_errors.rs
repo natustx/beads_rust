@@ -843,7 +843,7 @@ fn e2e_structured_error_invalid_priority() {
     assert!(error["retryable"].as_bool().unwrap());
     let hint = error["hint"].as_str().unwrap();
     assert!(
-        hint.contains("0") && hint.contains("4") || hint.contains("between"),
+        hint.contains('0') && hint.contains('4') || hint.contains("between"),
         "hint should mention valid priority range, got: {hint}"
     );
 }

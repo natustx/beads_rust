@@ -193,8 +193,7 @@ fn e2e_beads_jsonl_external_path() {
         let combined = format!("{}{}", sync.stdout, sync.stderr);
         assert!(
             combined.contains("external") || combined.contains("outside"),
-            "sync failure should mention external path restriction: {}",
-            combined
+            "sync failure should mention external path restriction: {combined}"
         );
     }
 }
@@ -413,7 +412,7 @@ fn e2e_no_db_with_beads_jsonl() {
     // Create JSONL file INSIDE .beads (path validation requires this)
     let custom_jsonl = beads_dir.join("custom.jsonl");
     let issue_json = r#"{"id":"bd-custom1","title":"Custom JSONL Location","status":"open","issue_type":"task","priority":2,"labels":[],"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","ephemeral":false,"pinned":false,"is_template":false,"dependencies":[],"comments":[]}"#;
-    fs::write(&custom_jsonl, format!("{}\n", issue_json)).expect("write jsonl");
+    fs::write(&custom_jsonl, format!("{issue_json}\n")).expect("write jsonl");
 
     // Use BEADS_JSONL to point to the custom location within .beads
     let env_vars = vec![
@@ -507,8 +506,7 @@ fn e2e_info_shows_resolved_paths() {
     // Verify paths are included (field name is "database_path")
     assert!(
         info_json.get("database_path").is_some(),
-        "info should include database_path: {}",
-        info_json
+        "info should include database_path: {info_json}"
     );
 }
 

@@ -13,6 +13,7 @@ pub mod cli;
 pub mod dataset_registry;
 pub mod fixtures;
 pub mod harness;
+pub mod report_indexer;
 pub mod scenarios;
 
 pub use artifact_validator::ArtifactValidator;
@@ -23,6 +24,10 @@ pub use dataset_registry::{
     run_with_integrity,
 };
 pub use harness::{ParallelismMode, ResourceGuardrails, RunnerPolicy};
+pub use report_indexer::{
+    ArtifactIndexer, CommandMetric, FullReport, IndexerConfig, IndexerError, SnapshotMetric,
+    SuiteReport, TestReport, generate_html_report, generate_markdown_report, write_reports,
+};
 pub use scenarios::{
     CompareMode, ExecutionMode, Invariants, NormalizationRules, Scenario, ScenarioCommand,
     ScenarioFilter, ScenarioResult, ScenarioRunner, ScenarioSetup, TagMatchMode,

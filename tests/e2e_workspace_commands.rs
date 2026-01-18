@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::cli::{BrWorkspace, extract_json_payload, run_br};
+use common::cli::{BrWorkspace, extract_json_payload, run_br, run_br_with_env};
 use serde_json::Value;
 use std::fs;
 
@@ -195,6 +195,34 @@ fn e2e_config_json_output() {
     let payload = extract_json_payload(&config_list.stdout);
     let _json: Value =
         serde_json::from_str(&payload).expect("config list should output valid JSON");
+}
+
+#[cfg(not(windows))]
+#[test]
+fn e2e_config_edit_creates_user_config() {
+    let _log = common::test_log("e2e_config_edit_creates_user_config");
+    let workspace = BrWorkspace::new();
+
+    let env_vars = vec![("EDITOR", "true")];
+    let edit = run_br_with_env(&workspace, ["config", "edit"], env_vars, "config_edit");
+    assert!(edit.status.success(), "config edit failed: {}", edit.stderr);
+
+    let config_path = workspace
+        .root
+        .join(".config")
+        .join("beads")
+        .join("config.yaml");
+    assert!(
+        config_path.exists(),
+        "config edit should create user config at {}",
+        config_path.display()
+    );
+
+    let contents = fs::read_to_string(&config_path).expect("read user config");
+    assert!(
+        contents.contains("br configuration"),
+        "config edit should create default template content"
+    );
 }
 
 // ============================================================================

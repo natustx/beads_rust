@@ -24,7 +24,14 @@
 //! - Large: 100,000 issues
 //! - XLarge: 250,000 issues (very long-running)
 
-#![allow(clippy::cast_precision_loss, clippy::similar_names)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::similar_names,
+    clippy::doc_markdown,
+    clippy::uninlined_format_args,
+    clippy::too_many_lines,
+    clippy::missing_const_for_fn
+)]
 
 mod common;
 
@@ -63,6 +70,7 @@ pub enum ScaleTier {
 }
 
 impl ScaleTier {
+    #[must_use]
     pub const fn issue_count(self) -> usize {
         match self {
             Self::Small => 10_000,
@@ -72,6 +80,7 @@ impl ScaleTier {
         }
     }
 
+    #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Small => "small_10k",
@@ -82,11 +91,11 @@ impl ScaleTier {
     }
 
     /// Target dependency density (deps per issue on average).
+    #[must_use]
     pub const fn dependency_density(self) -> f64 {
         match self {
             Self::Small => 0.3,
-            Self::Medium => 0.5,
-            Self::Large => 0.5,
+            Self::Medium | Self::Large => 0.5,
             Self::XLarge => 0.7,
         }
     }
@@ -110,6 +119,7 @@ pub struct SyntheticConfig {
 }
 
 impl SyntheticConfig {
+    #[must_use]
     pub fn from_tier(tier: ScaleTier) -> Self {
         Self {
             issue_count: tier.issue_count(),
@@ -119,6 +129,7 @@ impl SyntheticConfig {
         }
     }
 
+    #[must_use]
     pub const fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
         self
@@ -151,6 +162,10 @@ pub struct SyntheticDataset {
 
 impl SyntheticDataset {
     /// Generate a synthetic dataset based on the config.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the temporary workspace or any CLI command fails.
     pub fn generate(config: SyntheticConfig, br_path: &Path) -> std::io::Result<Self> {
         let start = Instant::now();
         let temp_dir = TempDir::new()?;
@@ -168,13 +183,10 @@ impl SyntheticDataset {
             .output()?;
 
         if !init_output.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "br init failed: {}",
-                    String::from_utf8_lossy(&init_output.stderr)
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "br init failed: {}",
+                String::from_utf8_lossy(&init_output.stderr)
+            )));
         }
 
         // Generate synthetic issues
@@ -230,7 +242,10 @@ impl SyntheticDataset {
 
                 // Progress indicator
                 if created_count % 5000 == 0 {
-                    eprintln!("  Generated {created_count}/{} issues...", config.issue_count);
+                    eprintln!(
+                        "  Generated {created_count}/{} issues...",
+                        config.issue_count
+                    );
                 }
             }
         }
@@ -255,6 +270,7 @@ impl SyntheticDataset {
                     })
                     .collect();
 
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                 let target_deps =
                     (actual_ids.len() as f64 * config.dependency_density).round() as usize;
                 let mut added_deps = 0;
@@ -313,6 +329,7 @@ impl SyntheticDataset {
     }
 
     /// Get workspace root for command execution.
+    #[must_use]
     pub fn workspace_root(&self) -> &Path {
         &self.root
     }
@@ -321,8 +338,21 @@ impl SyntheticDataset {
 /// Generate a realistic-looking issue title.
 fn generate_title(rng: &mut StdRng, index: usize) -> String {
     let prefixes = [
-        "Add", "Fix", "Update", "Refactor", "Implement", "Remove", "Improve", "Optimize",
-        "Document", "Test", "Review", "Debug", "Cleanup", "Migrate", "Configure",
+        "Add",
+        "Fix",
+        "Update",
+        "Refactor",
+        "Implement",
+        "Remove",
+        "Improve",
+        "Optimize",
+        "Document",
+        "Test",
+        "Review",
+        "Debug",
+        "Cleanup",
+        "Migrate",
+        "Configure",
     ];
 
     let subjects = [
@@ -486,15 +516,30 @@ fn benchmark_synthetic(dataset: &SyntheticDataset, br_path: &Path) -> SyntheticB
     let workspace = dataset.workspace_root();
 
     // Read operations
-    operations.push(run_operation(br_path, &["list", "--json"], workspace, "list"));
+    operations.push(run_operation(
+        br_path,
+        &["list", "--json"],
+        workspace,
+        "list",
+    ));
     operations.push(run_operation(
         br_path,
         &["list", "--status=open", "--json"],
         workspace,
         "list_open",
     ));
-    operations.push(run_operation(br_path, &["ready", "--json"], workspace, "ready"));
-    operations.push(run_operation(br_path, &["stats", "--json"], workspace, "stats"));
+    operations.push(run_operation(
+        br_path,
+        &["ready", "--json"],
+        workspace,
+        "ready",
+    ));
+    operations.push(run_operation(
+        br_path,
+        &["stats", "--json"],
+        workspace,
+        "stats",
+    ));
     operations.push(run_operation(
         br_path,
         &["search", "test", "--json"],
@@ -524,18 +569,17 @@ fn benchmark_synthetic(dataset: &SyntheticDataset, br_path: &Path) -> SyntheticB
     let total_duration_ms = start.elapsed().as_millis();
     let successful_ops: Vec<_> = operations.iter().filter(|o| o.success).collect();
 
-    let avg_operation_ms = if !successful_ops.is_empty() {
-        successful_ops.iter().map(|o| o.duration_ms).sum::<u128>()
-            / successful_ops.len() as u128
-    } else {
+    let avg_operation_ms = if successful_ops.is_empty() {
         0
+    } else {
+        successful_ops.iter().map(|o| o.duration_ms).sum::<u128>() / successful_ops.len() as u128
     };
 
-    let (slowest_operation, slowest_duration_ms) = operations
-        .iter()
-        .max_by_key(|o| o.duration_ms)
-        .map(|o| (o.operation.clone(), o.duration_ms))
-        .unwrap_or_else(|| ("none".to_string(), 0));
+    let (slowest_operation, slowest_duration_ms) =
+        operations.iter().max_by_key(|o| o.duration_ms).map_or_else(
+            || ("none".to_string(), 0),
+            |o| (o.operation.clone(), o.duration_ms),
+        );
 
     let ops_per_second = if total_duration_ms > 0 {
         (operations.len() as f64 * 1000.0) / total_duration_ms as f64
@@ -636,7 +680,10 @@ fn print_benchmark(benchmark: &SyntheticBenchmark) {
 }
 
 /// Write benchmark results to JSON file.
-fn write_benchmark_json(benchmarks: &[SyntheticBenchmark], output_path: &Path) -> std::io::Result<()> {
+fn write_benchmark_json(
+    benchmarks: &[SyntheticBenchmark],
+    output_path: &Path,
+) -> std::io::Result<()> {
     let file = File::create(output_path)?;
     let writer = BufWriter::new(file);
     serde_json::to_writer_pretty(writer, benchmarks)?;
@@ -662,7 +709,10 @@ fn stress_synthetic_small() {
     println!("\n=== Synthetic Scale-Up Benchmark: Small (10K) ===\n");
 
     let config = SyntheticConfig::from_tier(ScaleTier::Small);
-    eprintln!("Generating synthetic dataset ({} issues)...", config.issue_count);
+    eprintln!(
+        "Generating synthetic dataset ({} issues)...",
+        config.issue_count
+    );
 
     let dataset = SyntheticDataset::generate(config, &binaries.br.path)
         .expect("Failed to generate synthetic dataset");
@@ -694,7 +744,10 @@ fn stress_synthetic_medium() {
     println!("\n=== Synthetic Scale-Up Benchmark: Medium (50K) ===\n");
 
     let config = SyntheticConfig::from_tier(ScaleTier::Medium);
-    eprintln!("Generating synthetic dataset ({} issues)...", config.issue_count);
+    eprintln!(
+        "Generating synthetic dataset ({} issues)...",
+        config.issue_count
+    );
 
     let dataset = SyntheticDataset::generate(config, &binaries.br.path)
         .expect("Failed to generate synthetic dataset");
@@ -726,7 +779,10 @@ fn stress_synthetic_large() {
     println!("\n=== Synthetic Scale-Up Benchmark: Large (100K) ===\n");
 
     let config = SyntheticConfig::from_tier(ScaleTier::Large);
-    eprintln!("Generating synthetic dataset ({} issues)...", config.issue_count);
+    eprintln!(
+        "Generating synthetic dataset ({} issues)...",
+        config.issue_count
+    );
 
     let dataset = SyntheticDataset::generate(config, &binaries.br.path)
         .expect("Failed to generate synthetic dataset");
@@ -758,7 +814,10 @@ fn stress_synthetic_xlarge() {
     println!("\n=== Synthetic Scale-Up Benchmark: XLarge (250K) ===\n");
 
     let config = SyntheticConfig::from_tier(ScaleTier::XLarge);
-    eprintln!("Generating synthetic dataset ({} issues)...", config.issue_count);
+    eprintln!(
+        "Generating synthetic dataset ({} issues)...",
+        config.issue_count
+    );
 
     let dataset = SyntheticDataset::generate(config, &binaries.br.path)
         .expect("Failed to generate synthetic dataset");
@@ -835,8 +894,7 @@ fn stress_synthetic_all() {
         let ips = b
             .summary
             .issues_per_second
-            .map(|v| format!("{:.0}", v))
-            .unwrap_or_else(|| "N/A".to_string());
+            .map_or_else(|| "N/A".to_string(), |v| format!("{:.0}", v));
         println!(
             "{}: {}ms total, {} issues/sec for list",
             b.tier, b.summary.total_duration_ms, ips

@@ -28,6 +28,7 @@ fn parse_created_id(stdout: &str) -> String {
 }
 
 /// Setup a workspace with a variety of test issues for comprehensive filtering.
+#[allow(clippy::too_many_lines)]
 fn setup_diverse_workspace() -> (BrWorkspace, Vec<String>) {
     let workspace = BrWorkspace::new();
     let init = run_br(&workspace, ["init"], "init");
@@ -60,7 +61,14 @@ fn setup_diverse_workspace() -> (BrWorkspace, Vec<String>) {
     let id2 = parse_created_id(&issue2.stdout);
     run_br(
         &workspace,
-        ["update", &id2, "--add-label", "urgent", "--assignee", "alice"],
+        [
+            "update",
+            &id2,
+            "--add-label",
+            "urgent",
+            "--assignee",
+            "alice",
+        ],
         "update_bug1",
     );
     ids.push(id2);
@@ -169,7 +177,10 @@ fn e2e_list_basic_text_output() {
         );
     }
     // Backlog item should be included
-    assert!(list.stdout.contains(&ids[5]), "list should contain backlog item");
+    assert!(
+        list.stdout.contains(&ids[5]),
+        "list should contain backlog item"
+    );
 
     // Deferred issue IS included by default
     assert!(
@@ -498,7 +509,14 @@ fn e2e_list_priority_range() {
     // Priority range 1-2
     let list = run_br(
         &workspace,
-        ["list", "--priority-min", "1", "--priority-max", "2", "--json"],
+        [
+            "list",
+            "--priority-min",
+            "1",
+            "--priority-max",
+            "2",
+            "--json",
+        ],
         "list_priority_range",
     );
     assert!(list.status.success());
@@ -511,7 +529,7 @@ fn e2e_list_priority_range() {
     for issue in &issues {
         let priority = issue["priority"].as_u64().unwrap();
         assert!(
-            priority >= 1 && priority <= 2,
+            (1..=2).contains(&priority),
             "priority should be 1-2, got {priority}"
         );
     }
@@ -572,7 +590,14 @@ fn e2e_list_label_filter_or() {
     // Filter by labels "urgent" OR "frontend" (any match)
     let list = run_br(
         &workspace,
-        ["list", "--label-any", "urgent", "--label-any", "frontend", "--json"],
+        [
+            "list",
+            "--label-any",
+            "urgent",
+            "--label-any",
+            "frontend",
+            "--json",
+        ],
         "list_label_or",
     );
     assert!(list.status.success());
@@ -702,9 +727,12 @@ fn e2e_list_sort_by_priority() {
     let issues: Vec<Value> = serde_json::from_str(&payload).expect("json parse");
 
     // Verify sorted by priority ascending (P0 first)
-    let priorities: Vec<u64> = issues.iter().map(|i| i["priority"].as_u64().unwrap()).collect();
+    let priorities: Vec<u64> = issues
+        .iter()
+        .map(|i| i["priority"].as_u64().unwrap())
+        .collect();
     let mut sorted = priorities.clone();
-    sorted.sort();
+    sorted.sort_unstable();
     assert_eq!(
         priorities, sorted,
         "issues should be sorted by priority ascending"
@@ -727,9 +755,12 @@ fn e2e_list_sort_by_priority_reverse() {
     let issues: Vec<Value> = serde_json::from_str(&payload).expect("json parse");
 
     // Verify sorted by priority descending (P4 first)
-    let priorities: Vec<u64> = issues.iter().map(|i| i["priority"].as_u64().unwrap()).collect();
+    let priorities: Vec<u64> = issues
+        .iter()
+        .map(|i| i["priority"].as_u64().unwrap())
+        .collect();
     let mut sorted = priorities.clone();
-    sorted.sort();
+    sorted.sort_unstable();
     sorted.reverse();
     assert_eq!(
         priorities, sorted,
@@ -753,9 +784,12 @@ fn e2e_list_sort_by_title() {
     let issues: Vec<Value> = serde_json::from_str(&payload).expect("json parse");
 
     // Verify sorted by title alphabetically
-    let titles: Vec<&str> = issues.iter().map(|i| i["title"].as_str().unwrap()).collect();
+    let titles: Vec<&str> = issues
+        .iter()
+        .map(|i| i["title"].as_str().unwrap())
+        .collect();
     let mut sorted = titles.clone();
-    sorted.sort();
+    sorted.sort_unstable();
     assert_eq!(titles, sorted, "issues should be sorted by title");
 }
 
@@ -768,11 +802,7 @@ fn e2e_list_limit() {
     let _log = common::test_log("e2e_list_limit");
     let (workspace, _ids) = setup_diverse_workspace();
 
-    let list = run_br(
-        &workspace,
-        ["list", "--limit", "2", "--json"],
-        "list_limit",
-    );
+    let list = run_br(&workspace, ["list", "--limit", "2", "--json"], "list_limit");
     assert!(list.status.success());
 
     let payload = extract_json_payload(&list.stdout);
@@ -846,7 +876,9 @@ fn e2e_list_long_format() {
     // Long format should have more detail
     // Check for common fields that appear in long output
     assert!(
-        list.stdout.contains("Priority") || list.stdout.contains("P0") || list.stdout.contains("P1"),
+        list.stdout.contains("Priority")
+            || list.stdout.contains("P0")
+            || list.stdout.contains("P1"),
         "long format should show priority information"
     );
 }
@@ -861,7 +893,10 @@ fn e2e_list_pretty_format() {
 
     // Pretty format uses tree/indentation
     // Just verify it runs without error
-    assert!(list.stdout.len() > 0, "pretty format should produce output");
+    assert!(
+        !list.stdout.is_empty(),
+        "pretty format should produce output"
+    );
 }
 
 #[test]
@@ -871,7 +906,13 @@ fn e2e_list_csv_custom_fields() {
 
     let list = run_br(
         &workspace,
-        ["list", "--format", "csv", "--fields", "id,title,priority,assignee"],
+        [
+            "list",
+            "--format",
+            "csv",
+            "--fields",
+            "id,title,priority,assignee",
+        ],
         "list_csv_fields",
     );
     assert!(list.status.success());
@@ -926,7 +967,14 @@ fn e2e_list_empty_result() {
     // Filter that matches nothing
     let list = run_br(
         &workspace,
-        ["list", "--type", "bug", "--assignee", "nonexistent", "--json"],
+        [
+            "list",
+            "--type",
+            "bug",
+            "--assignee",
+            "nonexistent",
+            "--json",
+        ],
         "list_empty",
     );
     assert!(list.status.success());

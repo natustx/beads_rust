@@ -1,4 +1,4 @@
-//! E2E tests for SQLite lock handling and concurrency semantics.
+//! E2E tests for `SQLite` lock handling and concurrency semantics.
 //!
 //! Validates:
 //! - Lock contention with overlapping write operations
@@ -176,14 +176,13 @@ fn e2e_lock_timeout_behavior() {
 
     // Use a synchronization primitive
     let barrier = Arc::new(Barrier::new(2));
-    let root1 = Arc::new(root.clone());
-    let root2 = Arc::new(root.clone());
+    let root_shared = Arc::new(root);
     let seed_id_arc = Arc::new(seed_id);
 
     let barrier1 = Arc::clone(&barrier);
     let barrier2 = Arc::clone(&barrier);
-    let root1_clone = Arc::clone(&root1);
-    let root2_clone = Arc::clone(&root2);
+    let root1_clone = Arc::clone(&root_shared);
+    let root2_clone = Arc::clone(&root_shared);
     let seed_id_clone = Arc::clone(&seed_id_arc);
 
     // Thread 1: Do multiple rapid updates to keep the DB busy
@@ -215,8 +214,8 @@ fn e2e_lock_timeout_behavior() {
 
     // Log timing for diagnostics
     eprintln!(
-        "Low timeout operation: success={}, elapsed={:?}",
-        result2.success, elapsed2
+        "Low timeout operation: success={}, elapsed={elapsed2:?}",
+        result2.success
     );
 
     // Either outcome is valid depending on timing:
@@ -259,7 +258,7 @@ fn e2e_concurrent_reads_succeed() {
     let mut ids = Vec::new();
     for i in 0..5 {
         let create = run_br_in_dir(&root, ["create", &format!("Issue {i}")]);
-        assert!(create.success, "create {} failed: {}", i, create.stderr);
+        assert!(create.success, "create {i} failed: {}", create.stderr);
         ids.push(parse_created_id(&create.stdout));
     }
 
@@ -267,10 +266,10 @@ fn e2e_concurrent_reads_succeed() {
     let barrier = Arc::new(Barrier::new(5));
     let mut handles = Vec::new();
 
-    for i in 0..5 {
-        let root_clone = Arc::new(root.clone());
+    let root_arc = Arc::new(root);
+    for (i, issue_id) in ids.iter().cloned().enumerate() {
+        let root_clone = Arc::clone(&root_arc);
         let barrier_clone = Arc::clone(&barrier);
-        let issue_id = ids[i].clone();
 
         let handle = thread::spawn(move || {
             barrier_clone.wait();
@@ -296,10 +295,10 @@ fn e2e_concurrent_reads_succeed() {
 
     // All read operations should succeed
     for (i, list, show, stats, elapsed) in &results {
-        assert!(list.success, "thread {} list failed: {}", i, list.stderr);
-        assert!(show.success, "thread {} show failed: {}", i, show.stderr);
-        assert!(stats.success, "thread {} stats failed: {}", i, stats.stderr);
-        eprintln!("Thread {} completed reads in {:?}", i, elapsed);
+        assert!(list.success, "thread {i} list failed: {}", list.stderr);
+        assert!(show.success, "thread {i} show failed: {}", show.stderr);
+        assert!(stats.success, "thread {i} stats failed: {}", stats.stderr);
+        eprintln!("Thread {i} completed reads in {elapsed:?}");
     }
 
     drop(temp_dir);
@@ -336,16 +335,13 @@ fn e2e_lock_timeout_timing() {
 
     // Without contention, should complete very quickly
     assert!(result.success, "list failed: {}", result.stderr);
+    let timeout_ms_u64 = u64::try_from(timeout_ms).unwrap_or(0);
     assert!(
-        elapsed < Duration::from_millis(timeout_ms as u64 + 500),
-        "operation took too long without contention: {:?}",
-        elapsed
+        elapsed < Duration::from_millis(timeout_ms_u64 + 500),
+        "operation took too long without contention: {elapsed:?}"
     );
 
-    eprintln!(
-        "Lock timeout timing test: elapsed={:?} (timeout={}ms)",
-        elapsed, timeout_ms
-    );
+    eprintln!("Lock timeout timing test: elapsed={elapsed:?} (timeout={timeout_ms}ms)");
 
     drop(temp_dir);
 }
@@ -392,11 +388,11 @@ fn e2e_write_serialization() {
 
     // All should succeed
     for (i, result, elapsed) in &results {
-        assert!(result.success, "thread {} failed: {}", i, result.stderr);
-        eprintln!("Thread {} took {:?}", i, elapsed);
+        assert!(result.success, "thread {i} failed: {}", result.stderr);
+        eprintln!("Thread {i} took {elapsed:?}");
     }
 
-    eprintln!("Total time for 3 serialized writes: {:?}", total_elapsed);
+    eprintln!("Total time for 3 serialized writes: {total_elapsed:?}");
 
     // Verify all 3 issues exist
     let list = run_br_in_dir(&root, ["list", "--json"]);
@@ -430,7 +426,7 @@ fn e2e_mixed_read_write_concurrency() {
 
     for i in 0..3 {
         let create = run_br_in_dir(&root, ["create", &format!("Existing issue {i}")]);
-        assert!(create.success, "create {} failed", i);
+        assert!(create.success, "create {i} failed");
     }
 
     let barrier = Arc::new(Barrier::new(6)); // 3 readers + 3 writers
@@ -473,8 +469,8 @@ fn e2e_mixed_read_write_concurrency() {
 
     // All operations should succeed
     for (role, i, result, elapsed) in &results {
-        assert!(result.success, "{} {} failed: {}", role, i, result.stderr);
-        eprintln!("{} {} completed in {:?}", role, i, elapsed);
+        assert!(result.success, "{role} {i} failed: {}", result.stderr);
+        eprintln!("{role} {i} completed in {elapsed:?}");
     }
 
     // Verify final state
@@ -484,7 +480,12 @@ fn e2e_mixed_read_write_concurrency() {
     // Should have 3 existing + 3 new = 6 issues
     let payload = extract_json_payload(&list.stdout);
     let issues: Vec<serde_json::Value> = serde_json::from_str(&payload).expect("parse list json");
-    assert_eq!(issues.len(), 6, "expected 6 issues, got {}", issues.len());
+    assert_eq!(
+        issues.len(),
+        6,
+        "expected 6 issues, got {len}",
+        len = issues.len()
+    );
 
     drop(temp_dir);
 }

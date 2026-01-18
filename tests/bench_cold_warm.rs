@@ -6,11 +6,11 @@
 //! # What is Cold vs Warm?
 //!
 //! - **Cold start**: First process invocation after process termination.
-//!   The binary must be loaded from disk, SQLite must initialize, and no
+//!   The binary must be loaded from disk, `SQLite` must initialize, and no
 //!   filesystem cache benefits are expected (though OS may cache).
 //!
 //! - **Warm start**: Subsequent process invocations. The OS has likely cached
-//!   the binary, SQLite pages may be cached, and filesystem metadata is warm.
+//!   the binary, `SQLite` pages may be cached, and filesystem metadata is warm.
 //!
 //! # Measured Commands
 //!
@@ -42,8 +42,8 @@
 mod common;
 
 use common::{
-    init_test_logging, DatasetIntegrityGuard, IsolatedDataset, KnownDataset,
-    discover_binaries, DiscoveredBinaries,
+    DatasetIntegrityGuard, DiscoveredBinaries, IsolatedDataset, KnownDataset, discover_binaries,
+    init_test_logging,
 };
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
@@ -86,7 +86,8 @@ impl Default for ColdWarmConfig {
 
 impl ColdWarmConfig {
     /// Quick config for CI (fewer runs)
-    pub fn quick() -> Self {
+    #[must_use]
+    pub const fn quick() -> Self {
         Self {
             cold_runs: 2,
             warm_runs: 3,
@@ -134,6 +135,7 @@ pub struct TimingStats {
 }
 
 impl TimingStats {
+    #[must_use]
     pub fn from_measurements(measurements: &[Measurement]) -> Self {
         if measurements.is_empty() {
             return Self {
@@ -152,7 +154,7 @@ impl TimingStats {
         let n = values.len();
         let mean = values.iter().sum::<f64>() / n as f64;
         let median = if n % 2 == 0 {
-            (values[n / 2 - 1] + values[n / 2]) / 2.0
+            f64::midpoint(values[n / 2 - 1], values[n / 2])
         } else {
             values[n / 2]
         };
@@ -181,7 +183,7 @@ pub struct ColdWarmComparison {
     pub warm_stats: TimingStats,
     /// Cold/warm ratio (>1 means cold is slower, as expected)
     pub cold_warm_ratio: f64,
-    /// Startup overhead in ms (cold_mean - warm_mean)
+    /// Startup overhead in ms (`cold_mean` - `warm_mean`)
     pub startup_overhead_ms: f64,
     /// Raw measurements for detailed analysis
     pub cold_measurements: Vec<Measurement>,
@@ -342,7 +344,15 @@ fn measure_warm(
 ) -> Vec<Measurement> {
     // Warmup runs (discarded)
     for _ in 0..config.warmup_runs {
-        let _ = run_timed(binary_path, args, cwd, command_label, binary_name, "warmup", 0);
+        let _ = run_timed(
+            binary_path,
+            args,
+            cwd,
+            command_label,
+            binary_name,
+            "warmup",
+            0,
+        );
     }
 
     // Timed warm runs
@@ -373,10 +383,12 @@ fn measure_cold_warm(
     config: &ColdWarmConfig,
 ) -> ColdWarmComparison {
     // Measure cold first (before any warm-up)
-    let cold_measurements = measure_cold(binary_path, args, cwd, command_label, binary_name, config);
+    let cold_measurements =
+        measure_cold(binary_path, args, cwd, command_label, binary_name, config);
 
     // Then measure warm
-    let warm_measurements = measure_warm(binary_path, args, cwd, command_label, binary_name, config);
+    let warm_measurements =
+        measure_warm(binary_path, args, cwd, command_label, binary_name, config);
 
     let cold_stats = TimingStats::from_measurements(&cold_measurements);
     let warm_stats = TimingStats::from_measurements(&warm_measurements);
@@ -435,28 +447,22 @@ fn benchmark_dataset(
     let issue_count = isolated.metadata.issue_count;
     let workspace = isolated.workspace_root();
 
-    println!("\nBenchmarking cold/warm: {} ({} issues)", dataset_name, issue_count);
+    println!("\nBenchmarking cold/warm: {dataset_name} ({issue_count} issues)");
 
     let bd_path = binaries.bd.as_ref().map(|b| b.path.clone());
     let mut comparisons = Vec::new();
 
     for (label, args) in BENCHMARK_COMMANDS {
-        print!("  {} ... ", label);
+        print!("  {label} ... ");
 
         // Measure br
-        let br_cold_warm = measure_cold_warm(
-            &binaries.br.path,
-            args,
-            workspace,
-            label,
-            "br",
-            config,
-        );
+        let br_cold_warm =
+            measure_cold_warm(&binaries.br.path, args, workspace, label, "br", config);
 
         // Measure bd if available
-        let bd_cold_warm = bd_path.as_ref().map(|bd| {
-            measure_cold_warm(bd, args, workspace, label, "bd", config)
-        });
+        let bd_cold_warm = bd_path
+            .as_ref()
+            .map(|bd| measure_cold_warm(bd, args, workspace, label, "bd", config));
 
         // Calculate ratios
         let (cold_ratio, warm_ratio, overhead_ratio) = if let Some(ref bd_cw) = bd_cold_warm {
@@ -536,10 +542,16 @@ fn calculate_summary(comparisons: &[BinaryComparison]) -> ColdWarmSummary {
         };
     }
 
-    let br_ratios: Vec<f64> = comparisons.iter().map(|c| c.br_cold_warm.cold_warm_ratio).collect();
+    let br_ratios: Vec<f64> = comparisons
+        .iter()
+        .map(|c| c.br_cold_warm.cold_warm_ratio)
+        .collect();
     let br_avg_cold_warm_ratio = br_ratios.iter().sum::<f64>() / n as f64;
 
-    let br_overheads: Vec<f64> = comparisons.iter().map(|c| c.br_cold_warm.startup_overhead_ms).collect();
+    let br_overheads: Vec<f64> = comparisons
+        .iter()
+        .map(|c| c.br_cold_warm.startup_overhead_ms)
+        .collect();
     let br_avg_overhead_ms = br_overheads.iter().sum::<f64>() / n as f64;
 
     let bd_avg_cold_warm_ratio = {
@@ -570,12 +582,12 @@ fn calculate_summary(comparisons: &[BinaryComparison]) -> ColdWarmSummary {
 
     let br_faster_cold_count = comparisons
         .iter()
-        .filter(|c| c.cold_ratio.map(|r| r < 1.0).unwrap_or(false))
+        .filter(|c| c.cold_ratio.is_some_and(|r| r < 1.0))
         .count();
 
     let br_faster_warm_count = comparisons
         .iter()
-        .filter(|c| c.warm_ratio.map(|r| r < 1.0).unwrap_or(false))
+        .filter(|c| c.warm_ratio.is_some_and(|r| r < 1.0))
         .count();
 
     ColdWarmSummary {
@@ -612,21 +624,18 @@ fn print_results(benchmark: &ColdWarmBenchmark) {
     println!("{dash}");
 
     for c in &benchmark.comparisons {
-        let bd_cold = c
-            .bd_cold_warm
-            .as_ref()
-            .map(|cw| format!("{:.1}", cw.cold_stats.mean_ms))
-            .unwrap_or_else(|| "-".to_string());
-        let bd_warm = c
-            .bd_cold_warm
-            .as_ref()
-            .map(|cw| format!("{:.1}", cw.warm_stats.mean_ms))
-            .unwrap_or_else(|| "-".to_string());
-        let bd_ratio = c
-            .bd_cold_warm
-            .as_ref()
-            .map(|cw| format!("{:.2}x", cw.cold_warm_ratio))
-            .unwrap_or_else(|| "-".to_string());
+        let bd_cold = c.bd_cold_warm.as_ref().map_or_else(
+            || "-".to_string(),
+            |cw| format!("{:.1}", cw.cold_stats.mean_ms),
+        );
+        let bd_warm = c.bd_cold_warm.as_ref().map_or_else(
+            || "-".to_string(),
+            |cw| format!("{:.1}", cw.warm_stats.mean_ms),
+        );
+        let bd_ratio = c.bd_cold_warm.as_ref().map_or_else(
+            || "-".to_string(),
+            |cw| format!("{:.2}x", cw.cold_warm_ratio),
+        );
 
         println!(
             "{:<15} {:>10.1} {:>10.1} {:>10.2}x {:>10} {:>10} {:>10}",
@@ -652,10 +661,7 @@ fn print_results(benchmark: &ColdWarmBenchmark) {
         benchmark.summary.bd_avg_cold_warm_ratio,
         benchmark.summary.bd_avg_overhead_ms,
     ) {
-        println!(
-            "  bd avg cold/warm ratio: {:.2}x, avg overhead: {:.1}ms",
-            bd_ratio, bd_overhead
-        );
+        println!("  bd avg cold/warm ratio: {bd_ratio:.2}x, avg overhead: {bd_overhead:.1}ms");
         println!(
             "  br faster on cold: {}/{}, br faster on warm: {}/{}",
             benchmark.summary.br_faster_cold_count,
@@ -695,7 +701,11 @@ fn cold_warm_full() {
         }
     };
 
-    println!("br: {} ({})", binaries.br.path.display(), binaries.br.version);
+    println!(
+        "br: {} ({})",
+        binaries.br.path.display(),
+        binaries.br.version
+    );
     if let Some(ref bd) = binaries.bd {
         println!("bd: {} ({})", bd.path.display(), bd.version);
     } else {
@@ -703,8 +713,10 @@ fn cold_warm_full() {
     }
 
     let config = ColdWarmConfig::default();
-    println!("\nConfig: {} cold runs, {} warm runs, {} warmup runs",
-        config.cold_runs, config.warm_runs, config.warmup_runs);
+    println!(
+        "\nConfig: {} cold runs, {} warm runs, {} warmup runs",
+        config.cold_runs, config.warm_runs, config.warmup_runs
+    );
     if config.drop_caches {
         println!("  Cache dropping: ENABLED");
     }
@@ -748,7 +760,7 @@ fn cold_warm_full() {
     }
 }
 
-/// Quick cold/warm benchmark on beads_rust only.
+/// Quick cold/warm benchmark on `beads_rust` only.
 #[test]
 #[ignore = "run with: cargo test --test bench_cold_warm cold_warm_quick -- --ignored --nocapture"]
 fn cold_warm_quick() {
@@ -776,7 +788,7 @@ fn cold_warm_quick() {
             print_results(&benchmark);
         }
         Err(e) => {
-            panic!("Failed to benchmark beads_rust: {}", e);
+            panic!("Failed to benchmark beads_rust: {e}");
         }
     }
 }
@@ -829,31 +841,27 @@ fn test_timing_stats() {
 /// Verify cold/warm comparison structure.
 #[test]
 fn test_cold_warm_comparison_structure() {
-    let cold = vec![
-        Measurement {
-            start_type: "cold".to_string(),
-            binary: "br".to_string(),
-            command: "list".to_string(),
-            run_index: 0,
-            duration_ms: 50.0,
-            exit_code: 0,
-            success: true,
-            stdout_bytes: 100,
-        },
-    ];
+    let cold = vec![Measurement {
+        start_type: "cold".to_string(),
+        binary: "br".to_string(),
+        command: "list".to_string(),
+        run_index: 0,
+        duration_ms: 50.0,
+        exit_code: 0,
+        success: true,
+        stdout_bytes: 100,
+    }];
 
-    let warm = vec![
-        Measurement {
-            start_type: "warm".to_string(),
-            binary: "br".to_string(),
-            command: "list".to_string(),
-            run_index: 0,
-            duration_ms: 25.0,
-            exit_code: 0,
-            success: true,
-            stdout_bytes: 100,
-        },
-    ];
+    let warm = vec![Measurement {
+        start_type: "warm".to_string(),
+        binary: "br".to_string(),
+        command: "list".to_string(),
+        run_index: 0,
+        duration_ms: 25.0,
+        exit_code: 0,
+        success: true,
+        stdout_bytes: 100,
+    }];
 
     let cold_stats = TimingStats::from_measurements(&cold);
     let warm_stats = TimingStats::from_measurements(&warm);
@@ -870,60 +878,58 @@ fn test_cold_warm_comparison_structure() {
 /// Test summary calculation.
 #[test]
 fn test_summary_calculation() {
-    let comparisons = vec![
-        BinaryComparison {
+    let comparisons = vec![BinaryComparison {
+        command: "list".to_string(),
+        br_cold_warm: ColdWarmComparison {
             command: "list".to_string(),
-            br_cold_warm: ColdWarmComparison {
-                command: "list".to_string(),
-                cold_stats: TimingStats {
-                    mean_ms: 50.0,
-                    median_ms: 50.0,
-                    min_ms: 48.0,
-                    max_ms: 52.0,
-                    stddev_ms: 2.0,
-                    count: 3,
-                },
-                warm_stats: TimingStats {
-                    mean_ms: 25.0,
-                    median_ms: 25.0,
-                    min_ms: 24.0,
-                    max_ms: 26.0,
-                    stddev_ms: 1.0,
-                    count: 5,
-                },
-                cold_warm_ratio: 2.0,
-                startup_overhead_ms: 25.0,
-                cold_measurements: vec![],
-                warm_measurements: vec![],
+            cold_stats: TimingStats {
+                mean_ms: 50.0,
+                median_ms: 50.0,
+                min_ms: 48.0,
+                max_ms: 52.0,
+                stddev_ms: 2.0,
+                count: 3,
             },
-            bd_cold_warm: Some(ColdWarmComparison {
-                command: "list".to_string(),
-                cold_stats: TimingStats {
-                    mean_ms: 100.0,
-                    median_ms: 100.0,
-                    min_ms: 98.0,
-                    max_ms: 102.0,
-                    stddev_ms: 2.0,
-                    count: 3,
-                },
-                warm_stats: TimingStats {
-                    mean_ms: 50.0,
-                    median_ms: 50.0,
-                    min_ms: 48.0,
-                    max_ms: 52.0,
-                    stddev_ms: 2.0,
-                    count: 5,
-                },
-                cold_warm_ratio: 2.0,
-                startup_overhead_ms: 50.0,
-                cold_measurements: vec![],
-                warm_measurements: vec![],
-            }),
-            cold_ratio: Some(0.5), // br is faster
-            warm_ratio: Some(0.5), // br is faster
-            overhead_ratio: Some(0.5),
+            warm_stats: TimingStats {
+                mean_ms: 25.0,
+                median_ms: 25.0,
+                min_ms: 24.0,
+                max_ms: 26.0,
+                stddev_ms: 1.0,
+                count: 5,
+            },
+            cold_warm_ratio: 2.0,
+            startup_overhead_ms: 25.0,
+            cold_measurements: vec![],
+            warm_measurements: vec![],
         },
-    ];
+        bd_cold_warm: Some(ColdWarmComparison {
+            command: "list".to_string(),
+            cold_stats: TimingStats {
+                mean_ms: 100.0,
+                median_ms: 100.0,
+                min_ms: 98.0,
+                max_ms: 102.0,
+                stddev_ms: 2.0,
+                count: 3,
+            },
+            warm_stats: TimingStats {
+                mean_ms: 50.0,
+                median_ms: 50.0,
+                min_ms: 48.0,
+                max_ms: 52.0,
+                stddev_ms: 2.0,
+                count: 5,
+            },
+            cold_warm_ratio: 2.0,
+            startup_overhead_ms: 50.0,
+            cold_measurements: vec![],
+            warm_measurements: vec![],
+        }),
+        cold_ratio: Some(0.5), // br is faster
+        warm_ratio: Some(0.5), // br is faster
+        overhead_ratio: Some(0.5),
+    }];
 
     let summary = calculate_summary(&comparisons);
 

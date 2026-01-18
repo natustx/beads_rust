@@ -321,8 +321,8 @@ fn e2e_upgrade_help_works() {
 // Feature Guard Tests
 // =============================================================================
 
-/// Check if the self_update feature is enabled by testing if upgrade command exists.
-/// This test verifies the binary was compiled with self_update support.
+/// Check if the `self_update` feature is enabled by testing if upgrade command exists.
+/// This test verifies the binary was compiled with `self_update` support.
 #[test]
 fn e2e_upgrade_feature_enabled() {
     // The upgrade command should exist when self_update feature is enabled (default)
@@ -378,7 +378,7 @@ fn setup_isolated_binary(workspace: &BrWorkspace) -> Option<std::path::PathBuf> 
     let current_binary = assert_cmd::cargo::cargo_bin!("br");
 
     // Copy the binary to the isolated location
-    std::fs::copy(&current_binary, &target_binary).ok()?;
+    std::fs::copy(current_binary, &target_binary).ok()?;
 
     // Make it executable on Unix
     #[cfg(unix)]
@@ -509,9 +509,7 @@ fn e2e_upgrade_guarded_dry_run_isolated() {
             || stdout.contains("would")
             || stderr.contains("NetworkError")
             || stderr.contains("error"),
-        "dry-run should indicate no changes: stdout={}, stderr={}",
-        stdout,
-        stderr
+        "dry-run should indicate no changes: stdout={stdout}, stderr={stderr}"
     );
 
     // Verify the binary is still the same (not modified)

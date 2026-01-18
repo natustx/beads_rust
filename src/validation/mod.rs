@@ -701,7 +701,9 @@ mod tests {
         assert!(is_valid_id_format("bd-abc12345678901234567890123456"));
 
         // Too long (41 chars) - exceeds max 40
-        assert!(!is_valid_id_format("bd-abc123456789012345678901234567890123456789"));
+        assert!(!is_valid_id_format(
+            "bd-abc123456789012345678901234567890123456789"
+        ));
     }
 
     #[test]
