@@ -31,3 +31,64 @@ fn test_list_priority_accepts_p_prefix() {
         println!("P-prefix priority unexpectedly succeeded");
     }
 }
+
+#[test]
+fn test_list_csv_default_header_and_escaping() {
+    let workspace = BrWorkspace::new();
+    run_br(&workspace, ["init"], "init_csv_default");
+    run_br(
+        &workspace,
+        ["create", "Hello, \"CSV\", world", "-p", "2"],
+        "create_csv_default",
+    );
+
+    let list = run_br(&workspace, ["list", "--format", "csv"], "list_csv_default");
+    assert!(list.status.success(), "CSV list failed: {}", list.stderr);
+
+    let header = list.stdout.lines().next().unwrap_or_default();
+    assert_eq!(
+        header.trim(),
+        "id,title,status,priority,issue_type,assignee,created_at,updated_at"
+    );
+    assert!(
+        list.stdout.contains("\"Hello, \"\"CSV\"\", world\""),
+        "CSV output did not escape title correctly: {}",
+        list.stdout
+    );
+}
+
+#[test]
+fn test_list_csv_fields_with_newlines() {
+    let workspace = BrWorkspace::new();
+    run_br(&workspace, ["init"], "init_csv_fields");
+    run_br(
+        &workspace,
+        ["create", "HasDescription", "-d", "Line1\nLine2"],
+        "create_csv_fields",
+    );
+
+    let list = run_br(
+        &workspace,
+        [
+            "list",
+            "--format",
+            "csv",
+            "--fields",
+            "id,title,description",
+        ],
+        "list_csv_fields",
+    );
+    assert!(
+        list.status.success(),
+        "CSV list with fields failed: {}",
+        list.stderr
+    );
+
+    let header = list.stdout.lines().next().unwrap_or_default();
+    assert_eq!(header.trim(), "id,title,description");
+    assert!(
+        list.stdout.contains("\"Line1\nLine2\""),
+        "CSV output did not quote newline field: {}",
+        list.stdout
+    );
+}
