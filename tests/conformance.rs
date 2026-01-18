@@ -1766,6 +1766,139 @@ fn conformance_ready_filter_assignee() {
 }
 
 #[test]
+fn conformance_ready_priority_order() {
+    common::init_test_logging();
+    info!("Starting conformance_ready_priority_order test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    // Create issues with mixed priorities
+    let priorities = [2, 0, 1];
+    for (idx, priority) in priorities.iter().enumerate() {
+        let title = format!("Priority issue {}", idx);
+        let priority_str = priority.to_string();
+        let br_out = workspace.run_br(
+            ["create", &title, "-p", &priority_str, "--json"],
+            &format!("ready_priority_br_{idx}"),
+        );
+        let bd_out = workspace.run_bd(
+            ["create", &title, "-p", &priority_str, "--json"],
+            &format!("ready_priority_bd_{idx}"),
+        );
+        assert!(
+            br_out.status.success(),
+            "br create failed: {}",
+            br_out.stderr
+        );
+        assert!(
+            bd_out.status.success(),
+            "bd create failed: {}",
+            bd_out.stderr
+        );
+    }
+
+    let br_ready = workspace.run_br(
+        ["ready", "--json", "--sort", "priority", "--limit", "0"],
+        "ready_priority",
+    );
+    let bd_ready = workspace.run_bd(
+        ["ready", "--json", "--sort", "priority", "--limit", "0"],
+        "ready_priority",
+    );
+
+    assert!(
+        br_ready.status.success(),
+        "br ready failed: {}",
+        br_ready.stderr
+    );
+    assert!(
+        bd_ready.status.success(),
+        "bd ready failed: {}",
+        bd_ready.stderr
+    );
+
+    let br_val: Value = serde_json::from_str(&extract_json_payload(&br_ready.stdout))
+        .unwrap_or(Value::Array(vec![]));
+    let bd_val: Value = serde_json::from_str(&extract_json_payload(&bd_ready.stdout))
+        .unwrap_or(Value::Array(vec![]));
+
+    let br_priorities: Vec<i32> = br_val
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.get("priority").and_then(|p| p.as_i64()))
+                .map(|p| p as i32)
+                .collect()
+        })
+        .unwrap_or_default();
+    let bd_priorities: Vec<i32> = bd_val
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.get("priority").and_then(|p| p.as_i64()))
+                .map(|p| p as i32)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    assert_eq!(br_priorities.len(), 3, "br ready should return 3 issues");
+    assert_eq!(bd_priorities.len(), 3, "bd ready should return 3 issues");
+
+    let br_sorted = br_priorities.windows(2).all(|w| w[0] <= w[1]);
+    let bd_sorted = bd_priorities.windows(2).all(|w| w[0] <= w[1]);
+
+    assert!(br_sorted, "br priorities not sorted: {:?}", br_priorities);
+    assert!(bd_sorted, "bd priorities not sorted: {:?}", bd_priorities);
+
+    assert_eq!(
+        br_priorities,
+        vec![0, 1, 2],
+        "br ready priority order mismatch"
+    );
+    assert_eq!(
+        bd_priorities,
+        vec![0, 1, 2],
+        "bd ready priority order mismatch"
+    );
+
+    info!("conformance_ready_priority_order passed");
+}
+
+#[test]
+fn conformance_ready_json_shape() {
+    common::init_test_logging();
+    info!("Starting conformance_ready_json_shape test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    workspace.run_br(["create", "Ready json shape"], "ready_json_shape_br");
+    workspace.run_bd(["create", "Ready json shape"], "ready_json_shape_bd");
+
+    let br_ready = workspace.run_br(["ready", "--json"], "ready_json_shape");
+    let bd_ready = workspace.run_bd(["ready", "--json"], "ready_json_shape");
+
+    assert!(
+        br_ready.status.success(),
+        "br ready failed: {}",
+        br_ready.stderr
+    );
+    assert!(
+        bd_ready.status.success(),
+        "bd ready failed: {}",
+        bd_ready.stderr
+    );
+
+    let br_json = extract_json_payload(&br_ready.stdout);
+    let bd_json = extract_json_payload(&bd_ready.stdout);
+
+    compare_json(&br_json, &bd_json, &CompareMode::StructureOnly).expect("JSON mismatch");
+
+    info!("conformance_ready_json_shape passed");
+}
+
+#[test]
 fn conformance_blocked_empty() {
     common::init_test_logging();
     info!("Starting conformance_blocked_empty test");
@@ -2225,6 +2358,94 @@ fn conformance_blocked_chain() {
     assert!(!bd_ids.contains(&bd_c_id.as_str()));
 
     info!("conformance_blocked_chain passed");
+}
+
+#[test]
+fn conformance_blocked_json_shape() {
+    common::init_test_logging();
+    info!("Starting conformance_blocked_json_shape test");
+
+    let workspace = ConformanceWorkspace::new();
+    workspace.init_both();
+
+    let br_blocker = workspace.run_br(
+        ["create", "Blocker issue", "--json"],
+        "blocked_shape_blocker",
+    );
+    let bd_blocker = workspace.run_bd(
+        ["create", "Blocker issue", "--json"],
+        "blocked_shape_blocker",
+    );
+    let br_blocked = workspace.run_br(
+        ["create", "Blocked issue", "--json"],
+        "blocked_shape_blocked",
+    );
+    let bd_blocked = workspace.run_bd(
+        ["create", "Blocked issue", "--json"],
+        "blocked_shape_blocked",
+    );
+
+    assert!(br_blocker.status.success());
+    assert!(bd_blocker.status.success());
+    assert!(br_blocked.status.success());
+    assert!(bd_blocked.status.success());
+
+    let br_blocker_id = serde_json::from_str::<Value>(&extract_json_payload(&br_blocker.stdout))
+        .ok()
+        .and_then(|v| v.get("id").and_then(|id| id.as_str()).map(str::to_string))
+        .expect("br blocker id");
+    let bd_blocker_id = serde_json::from_str::<Value>(&extract_json_payload(&bd_blocker.stdout))
+        .ok()
+        .and_then(|v| v.get("id").and_then(|id| id.as_str()).map(str::to_string))
+        .expect("bd blocker id");
+    let br_blocked_id = serde_json::from_str::<Value>(&extract_json_payload(&br_blocked.stdout))
+        .ok()
+        .and_then(|v| v.get("id").and_then(|id| id.as_str()).map(str::to_string))
+        .expect("br blocked id");
+    let bd_blocked_id = serde_json::from_str::<Value>(&extract_json_payload(&bd_blocked.stdout))
+        .ok()
+        .and_then(|v| v.get("id").and_then(|id| id.as_str()).map(str::to_string))
+        .expect("bd blocked id");
+
+    let br_dep = workspace.run_br(
+        ["dep", "add", &br_blocked_id, &br_blocker_id],
+        "blocked_shape_dep",
+    );
+    let bd_dep = workspace.run_bd(
+        ["dep", "add", &bd_blocked_id, &bd_blocker_id],
+        "blocked_shape_dep",
+    );
+    assert!(
+        br_dep.status.success(),
+        "br dep add failed: {}",
+        br_dep.stderr
+    );
+    assert!(
+        bd_dep.status.success(),
+        "bd dep add failed: {}",
+        bd_dep.stderr
+    );
+
+    let br_blocked_out = workspace.run_br(["blocked", "--json"], "blocked_json_shape");
+    let bd_blocked_out = workspace.run_bd(["blocked", "--json"], "blocked_json_shape");
+
+    assert!(
+        br_blocked_out.status.success(),
+        "br blocked failed: {}",
+        br_blocked_out.stderr
+    );
+    assert!(
+        bd_blocked_out.status.success(),
+        "bd blocked failed: {}",
+        bd_blocked_out.stderr
+    );
+
+    let br_json = extract_json_payload(&br_blocked_out.stdout);
+    let bd_json = extract_json_payload(&bd_blocked_out.stdout);
+
+    compare_json(&br_json, &bd_json, &CompareMode::StructureOnly).expect("JSON mismatch");
+
+    info!("conformance_blocked_json_shape passed");
 }
 
 #[test]
