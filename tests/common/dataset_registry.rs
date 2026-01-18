@@ -896,7 +896,9 @@ mod tests {
     fn test_isolated_dataset_copy() {
         let registry = DatasetRegistry::new();
         if !registry.is_available(KnownDataset::BeadsRust) {
-            eprintln!("Skipping test_isolated_dataset_copy: beads_rust dataset not available (no beads.db in CI)");
+            eprintln!(
+                "Skipping test_isolated_dataset_copy: beads_rust dataset not available (no beads.db in CI)"
+            );
             return;
         }
 
