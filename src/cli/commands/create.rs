@@ -175,7 +175,7 @@ pub fn create_issue_impl(
         design: None,
         acceptance_criteria: None,
         notes: None,
-        created_by: None,
+        created_by: Some(config.actor.clone()),
         closed_at: None,
         close_reason: None,
         closed_by_session: None,
