@@ -24,6 +24,10 @@ Thumbs.db
 # bv (beads viewer) local config and caches
 .bv/
 
+# Beads ephemeral files (runtime artifacts, not issues.jsonl)
+.beads/last-touched
+.beads/.bv.lock
+
 # Coverage reports
 /coverage/
 
