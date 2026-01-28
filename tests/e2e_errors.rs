@@ -1097,7 +1097,11 @@ fn e2e_structured_error_dependency_target_not_found() {
         "dep_missing_target_json",
     );
     assert!(!result.status.success());
-    assert_eq!(result.status.code(), Some(3), "exit code should be 3 (issue not found)");
+    assert_eq!(
+        result.status.code(),
+        Some(3),
+        "exit code should be 3 (issue not found)"
+    );
 
     let json = parse_error_json(&result.stderr).expect("should be valid JSON");
     assert!(verify_error_structure(&json), "missing required fields");
@@ -1106,7 +1110,12 @@ fn e2e_structured_error_dependency_target_not_found() {
     // Returns ISSUE_NOT_FOUND since the target issue doesn't exist
     assert_eq!(error["code"], "ISSUE_NOT_FOUND");
     assert!(!error["retryable"].as_bool().unwrap());
-    assert!(error["context"]["searched_id"].as_str().unwrap().contains("nonexistent"));
+    assert!(
+        error["context"]["searched_id"]
+            .as_str()
+            .unwrap()
+            .contains("nonexistent")
+    );
 }
 
 #[test]
@@ -1176,12 +1185,11 @@ fn e2e_delete_with_dependents_preview() {
 
     // Delete A (which has B as dependent) - shows preview mode warning
     // The command exits 0 (preview mode) but warns about dependents
-    let result = run_br(
-        &workspace,
-        ["delete", &id_a],
-        "delete_with_deps",
+    let result = run_br(&workspace, ["delete", &id_a], "delete_with_deps");
+    assert!(
+        result.status.success(),
+        "delete with dependents should show preview"
     );
-    assert!(result.status.success(), "delete with dependents should show preview");
     assert!(
         result.stdout.contains("depend on") || result.stdout.contains("dependents"),
         "should mention dependents in output"

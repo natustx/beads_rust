@@ -12,10 +12,10 @@
 use chrono::{TimeZone, Utc};
 
 use beads_rust::model::{Issue, IssueType, Priority, Status};
-use beads_rust::util::hash::{ContentHashable, content_hash, content_hash_from_parts};
 use beads_rust::util::id::{
     IdConfig, IdGenerator, compute_id_hash, generate_id_seed, is_valid_id_format, parse_id,
 };
+use beads_rust::util::{ContentHashable, content_hash, content_hash_from_parts};
 
 // =============================================================================
 // ID GENERATION FIXTURES
@@ -34,8 +34,14 @@ fn id_seed_deterministic_fixture() {
     let seed = generate_id_seed(title, description, creator, created_at, nonce);
 
     // Verify seed format: title|description|creator|timestamp_nanos|nonce
-    assert!(seed.starts_with("Fix authentication bug|"), "Seed should start with title");
-    assert!(seed.contains("|Users are getting logged out unexpectedly|"), "Seed should contain description");
+    assert!(
+        seed.starts_with("Fix authentication bug|"),
+        "Seed should start with title"
+    );
+    assert!(
+        seed.contains("|Users are getting logged out unexpectedly|"),
+        "Seed should contain description"
+    );
     assert!(seed.contains("|alice|"), "Seed should contain creator");
     assert!(seed.ends_with("|0"), "Seed should end with nonce 0");
 
@@ -45,7 +51,10 @@ fn id_seed_deterministic_fixture() {
 
     // Verify different nonce produces different seed
     let seed_nonce1 = generate_id_seed(title, description, creator, created_at, 1);
-    assert_ne!(seed, seed_nonce1, "Different nonce should produce different seed");
+    assert_ne!(
+        seed, seed_nonce1,
+        "Different nonce should produce different seed"
+    );
 }
 
 /// Test hash computation produces consistent base36 output.
@@ -64,9 +73,21 @@ fn hash_computation_base36_fixture() {
     assert_eq!(hash8.len(), 8);
 
     // Verify all are base36 (lowercase alphanumeric)
-    assert!(hash3.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
-    assert!(hash4.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
-    assert!(hash8.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+    assert!(
+        hash3
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    );
+    assert!(
+        hash4
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    );
+    assert!(
+        hash8
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    );
 
     // Verify determinism
     assert_eq!(compute_id_hash(input, 3), hash3);
@@ -85,7 +106,11 @@ fn optimal_length_birthday_problem() {
     // For small DBs, minimum length (3) should suffice
     assert_eq!(generator.optimal_length(0), 3, "Empty DB uses min length");
     assert_eq!(generator.optimal_length(10), 3, "10 issues uses min length");
-    assert_eq!(generator.optimal_length(50), 3, "50 issues still uses min length");
+    assert_eq!(
+        generator.optimal_length(50),
+        3,
+        "50 issues still uses min length"
+    );
 
     // As DB grows, length should increase
     let len_100 = generator.optimal_length(100);
@@ -94,7 +119,10 @@ fn optimal_length_birthday_problem() {
 
     assert!(len_100 >= 3, "100 issues needs at least 3 chars");
     assert!(len_1000 >= len_100, "1000 issues needs >= length of 100");
-    assert!(len_10000 >= len_1000, "10000 issues needs >= length of 1000");
+    assert!(
+        len_10000 >= len_1000,
+        "10000 issues needs >= length of 1000"
+    );
 
     // Very large DBs should use max length (8)
     let len_million = generator.optimal_length(1_000_000);
@@ -109,21 +137,30 @@ fn prefix_configuration_fixture() {
     // Default prefix
     let default_gen = IdGenerator::with_defaults();
     let id_default = default_gen.generate("Test", None, None, created_at, 0, |_| false);
-    assert!(id_default.starts_with("bd-"), "Default prefix should be bd-");
+    assert!(
+        id_default.starts_with("bd-"),
+        "Default prefix should be bd-"
+    );
     assert!(is_valid_id_format(&id_default));
 
     // Custom prefix
     let custom_config = IdConfig::with_prefix("myproject");
     let custom_gen = IdGenerator::new(custom_config);
     let id_custom = custom_gen.generate("Test", None, None, created_at, 0, |_| false);
-    assert!(id_custom.starts_with("myproject-"), "Custom prefix should be myproject-");
+    assert!(
+        id_custom.starts_with("myproject-"),
+        "Custom prefix should be myproject-"
+    );
     assert!(is_valid_id_format(&id_custom));
 
     // Hyphenated prefix
     let hyphen_config = IdConfig::with_prefix("my-project");
     let hyphen_gen = IdGenerator::new(hyphen_config);
     let id_hyphen = hyphen_gen.generate("Test", None, None, created_at, 0, |_| false);
-    assert!(id_hyphen.starts_with("my-project-"), "Hyphenated prefix should work");
+    assert!(
+        id_hyphen.starts_with("my-project-"),
+        "Hyphenated prefix should work"
+    );
     assert!(is_valid_id_format(&id_hyphen));
 }
 
@@ -238,7 +275,10 @@ fn content_hash_deterministic_fixture() {
 
     assert_eq!(hash1, hash2, "Content hash must be deterministic");
     assert_eq!(hash1.len(), 64, "SHA256 hash should be 64 hex chars");
-    assert!(hash1.chars().all(|c| c.is_ascii_hexdigit()), "Hash must be hex");
+    assert!(
+        hash1.chars().all(|c| c.is_ascii_hexdigit()),
+        "Hash must be hex"
+    );
 }
 
 /// Test content hash changes with title.
@@ -246,25 +286,44 @@ fn content_hash_deterministic_fixture() {
 fn content_hash_title_sensitivity() {
     let hash1 = content_hash_from_parts(
         "Title One",
-        None, None, None, None,
+        None,
+        None,
+        None,
+        None,
         &Status::Open,
         &Priority::MEDIUM,
         &IssueType::Task,
-        None, None, None, None, None,
-        false, false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
     let hash2 = content_hash_from_parts(
         "Title Two",
-        None, None, None, None,
+        None,
+        None,
+        None,
+        None,
         &Status::Open,
         &Priority::MEDIUM,
         &IssueType::Task,
-        None, None, None, None, None,
-        false, false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
-    assert_ne!(hash1, hash2, "Different titles should produce different hashes");
+    assert_ne!(
+        hash1, hash2,
+        "Different titles should produce different hashes"
+    );
 }
 
 /// Test content hash changes with status.
@@ -272,97 +331,219 @@ fn content_hash_title_sensitivity() {
 fn content_hash_status_sensitivity() {
     let base_args = (
         "Test Issue",
-        None::<&str>, None::<&str>, None::<&str>, None::<&str>,
+        None::<&str>,
+        None::<&str>,
+        None::<&str>,
+        None::<&str>,
         &Priority::MEDIUM,
         &IssueType::Task,
-        None::<&str>, None::<&str>, None::<&str>, None::<&str>, None::<&str>,
-        false, false,
+        None::<&str>,
+        None::<&str>,
+        None::<&str>,
+        None::<&str>,
+        None::<&str>,
+        false,
+        false,
     );
 
     let hash_open = content_hash_from_parts(
-        base_args.0, base_args.1, base_args.2, base_args.3, base_args.4,
-        &Status::Open, base_args.5, base_args.6,
-        base_args.7, base_args.8, base_args.9, base_args.10, base_args.11,
-        base_args.12, base_args.13,
+        base_args.0,
+        base_args.1,
+        base_args.2,
+        base_args.3,
+        base_args.4,
+        &Status::Open,
+        base_args.5,
+        base_args.6,
+        base_args.7,
+        base_args.8,
+        base_args.9,
+        base_args.10,
+        base_args.11,
+        base_args.12,
+        base_args.13,
     );
 
     let hash_closed = content_hash_from_parts(
-        base_args.0, base_args.1, base_args.2, base_args.3, base_args.4,
-        &Status::Closed, base_args.5, base_args.6,
-        base_args.7, base_args.8, base_args.9, base_args.10, base_args.11,
-        base_args.12, base_args.13,
+        base_args.0,
+        base_args.1,
+        base_args.2,
+        base_args.3,
+        base_args.4,
+        &Status::Closed,
+        base_args.5,
+        base_args.6,
+        base_args.7,
+        base_args.8,
+        base_args.9,
+        base_args.10,
+        base_args.11,
+        base_args.12,
+        base_args.13,
     );
 
-    assert_ne!(hash_open, hash_closed, "Different status should produce different hashes");
+    assert_ne!(
+        hash_open, hash_closed,
+        "Different status should produce different hashes"
+    );
 }
 
 /// Test content hash changes with priority.
 #[test]
 fn content_hash_priority_sensitivity() {
     let hash_p1 = content_hash_from_parts(
-        "Test", None, None, None, None,
-        &Status::Open, &Priority::HIGH, &IssueType::Task,
-        None, None, None, None, None,
-        false, false,
+        "Test",
+        None,
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::HIGH,
+        &IssueType::Task,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
     let hash_p3 = content_hash_from_parts(
-        "Test", None, None, None, None,
-        &Status::Open, &Priority::LOW, &IssueType::Task,
-        None, None, None, None, None,
-        false, false,
+        "Test",
+        None,
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::LOW,
+        &IssueType::Task,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
-    assert_ne!(hash_p1, hash_p3, "Different priority should produce different hashes");
+    assert_ne!(
+        hash_p1, hash_p3,
+        "Different priority should produce different hashes"
+    );
 }
 
 /// Test content hash changes with issue type.
 #[test]
 fn content_hash_type_sensitivity() {
     let hash_bug = content_hash_from_parts(
-        "Test", None, None, None, None,
-        &Status::Open, &Priority::MEDIUM, &IssueType::Bug,
-        None, None, None, None, None,
-        false, false,
+        "Test",
+        None,
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::MEDIUM,
+        &IssueType::Bug,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
     let hash_feature = content_hash_from_parts(
-        "Test", None, None, None, None,
-        &Status::Open, &Priority::MEDIUM, &IssueType::Feature,
-        None, None, None, None, None,
-        false, false,
+        "Test",
+        None,
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::MEDIUM,
+        &IssueType::Feature,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
-    assert_ne!(hash_bug, hash_feature, "Different type should produce different hashes");
+    assert_ne!(
+        hash_bug, hash_feature,
+        "Different type should produce different hashes"
+    );
 }
 
 /// Test content hash includes boolean flags.
 #[test]
 fn content_hash_boolean_sensitivity() {
     let hash_default = content_hash_from_parts(
-        "Test", None, None, None, None,
-        &Status::Open, &Priority::MEDIUM, &IssueType::Task,
-        None, None, None, None, None,
-        false, false,
+        "Test",
+        None,
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::MEDIUM,
+        &IssueType::Task,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
     let hash_pinned = content_hash_from_parts(
-        "Test", None, None, None, None,
-        &Status::Open, &Priority::MEDIUM, &IssueType::Task,
-        None, None, None, None, None,
-        true, false, // pinned=true
+        "Test",
+        None,
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::MEDIUM,
+        &IssueType::Task,
+        None,
+        None,
+        None,
+        None,
+        None,
+        true,
+        false, // pinned=true
     );
 
     let hash_template = content_hash_from_parts(
-        "Test", None, None, None, None,
-        &Status::Open, &Priority::MEDIUM, &IssueType::Task,
-        None, None, None, None, None,
-        false, true, // is_template=true
+        "Test",
+        None,
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::MEDIUM,
+        &IssueType::Task,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        true, // is_template=true
     );
 
     assert_ne!(hash_default, hash_pinned, "pinned flag should affect hash");
-    assert_ne!(hash_default, hash_template, "is_template flag should affect hash");
-    assert_ne!(hash_pinned, hash_template, "Different flags should produce different hashes");
+    assert_ne!(
+        hash_default, hash_template,
+        "is_template flag should affect hash"
+    );
+    assert_ne!(
+        hash_pinned, hash_template,
+        "Different flags should produce different hashes"
+    );
 }
 
 /// Test content hash via Issue trait.
@@ -413,7 +594,10 @@ fn content_hash_trait_implementation() {
     let hash_trait = issue.content_hash();
     let hash_direct = content_hash(&issue);
 
-    assert_eq!(hash_trait, hash_direct, "Trait impl should match direct call");
+    assert_eq!(
+        hash_trait, hash_direct,
+        "Trait impl should match direct call"
+    );
 
     // Verify ID doesn't affect content hash
     let hash_before = issue.content_hash();
@@ -428,7 +612,10 @@ fn content_hash_trait_implementation() {
     issue.created_at = Utc::now();
     let hash_t2 = issue.content_hash();
 
-    assert_eq!(hash_t1, hash_t2, "Timestamps should not affect content hash");
+    assert_eq!(
+        hash_t1, hash_t2,
+        "Timestamps should not affect content hash"
+    );
 }
 
 /// Test content hash with optional fields.
@@ -436,34 +623,78 @@ fn content_hash_trait_implementation() {
 fn content_hash_optional_fields() {
     // Base hash with no optional fields
     let hash_none = content_hash_from_parts(
-        "Test", None, None, None, None,
-        &Status::Open, &Priority::MEDIUM, &IssueType::Task,
-        None, None, None, None, None,
-        false, false,
+        "Test",
+        None,
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::MEDIUM,
+        &IssueType::Task,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
     // With description
     let hash_desc = content_hash_from_parts(
-        "Test", Some("Description"), None, None, None,
-        &Status::Open, &Priority::MEDIUM, &IssueType::Task,
-        None, None, None, None, None,
-        false, false,
+        "Test",
+        Some("Description"),
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::MEDIUM,
+        &IssueType::Task,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
     // With design
     let hash_design = content_hash_from_parts(
-        "Test", None, Some("Design notes"), None, None,
-        &Status::Open, &Priority::MEDIUM, &IssueType::Task,
-        None, None, None, None, None,
-        false, false,
+        "Test",
+        None,
+        Some("Design notes"),
+        None,
+        None,
+        &Status::Open,
+        &Priority::MEDIUM,
+        &IssueType::Task,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
     );
 
     // With external_ref
     let hash_ext = content_hash_from_parts(
-        "Test", None, None, None, None,
-        &Status::Open, &Priority::MEDIUM, &IssueType::Task,
-        None, None, None, Some("github:org/repo#123"), None,
-        false, false,
+        "Test",
+        None,
+        None,
+        None,
+        None,
+        &Status::Open,
+        &Priority::MEDIUM,
+        &IssueType::Task,
+        None,
+        None,
+        None,
+        Some("github:org/repo#123"),
+        None,
+        false,
+        false,
     );
 
     assert_ne!(hash_none, hash_desc);
@@ -494,7 +725,10 @@ fn prefix_change_id_generation() {
     // The hash portion should be the same (same inputs)
     let bd_hash = id_bd.strip_prefix("bd-").unwrap();
     let proj_hash = id_proj.strip_prefix("myproject-").unwrap();
-    assert_eq!(bd_hash, proj_hash, "Same inputs should produce same hash regardless of prefix");
+    assert_eq!(
+        bd_hash, proj_hash,
+        "Same inputs should produce same hash regardless of prefix"
+    );
 }
 
 /// Test prefix validation in parsing.
@@ -510,5 +744,8 @@ fn prefix_validation_parsing() {
 
     // Prefix mismatch
     let err = validate_prefix("wrong-abc123", "bd", &[]).unwrap_err();
-    assert!(matches!(err, beads_rust::error::BeadsError::PrefixMismatch { .. }));
+    assert!(matches!(
+        err,
+        beads_rust::error::BeadsError::PrefixMismatch { .. }
+    ));
 }
