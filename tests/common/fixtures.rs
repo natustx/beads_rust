@@ -79,11 +79,11 @@ impl IssueBuilder {
     }
 
     pub fn with_status(mut self, s: Status) -> Self {
-        self.issue.status = s.clone();
         // Database constraint requires closed_at to be set when status is Closed
         if s == Status::Closed && self.issue.closed_at.is_none() {
             self.issue.closed_at = Some(Utc::now());
         }
+        self.issue.status = s;
         self
     }
 
