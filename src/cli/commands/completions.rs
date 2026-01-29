@@ -19,7 +19,7 @@ use crate::cli::{Cli, CompletionsArgs, ShellType};
 use crate::error::Result;
 use crate::output::OutputContext;
 use clap::CommandFactory;
-use clap_complete::{Shell, generate};
+use clap_complete::env::Shells;
 use std::io;
 use tracing::info;
 
@@ -31,13 +31,12 @@ use tracing::info;
 pub fn execute(args: &CompletionsArgs, _ctx: &OutputContext) -> Result<()> {
     info!(shell = ?args.shell, output = ?args.output, "Generating shell completions");
 
-    let mut cmd = Cli::command();
-    let shell = convert_shell_type(args.shell);
+    let cmd = Cli::command();
 
     if let Some(output_path) = &args.output {
         // Generate to file
         let mut file = std::fs::File::create(output_path)?;
-        generate(shell, &mut cmd, "br", &mut file);
+        write_dynamic_completions(args.shell, &cmd, &mut file)?;
         info!(path = %output_path.display(), "Wrote completion script");
         eprintln!(
             "Generated {} completions to {}",
@@ -46,21 +45,28 @@ pub fn execute(args: &CompletionsArgs, _ctx: &OutputContext) -> Result<()> {
         );
     } else {
         // Generate to stdout
-        generate(shell, &mut cmd, "br", &mut io::stdout());
+        write_dynamic_completions(args.shell, &cmd, &mut io::stdout())?;
     }
 
     Ok(())
 }
 
-/// Convert our `ShellType` enum to `clap_complete`'s Shell enum.
-const fn convert_shell_type(shell: ShellType) -> Shell {
-    match shell {
-        ShellType::Bash => Shell::Bash,
-        ShellType::Zsh => Shell::Zsh,
-        ShellType::Fish => Shell::Fish,
-        ShellType::PowerShell => Shell::PowerShell,
-        ShellType::Elvish => Shell::Elvish,
-    }
+fn write_dynamic_completions(
+    shell: ShellType,
+    cmd: &clap::Command,
+    out: &mut dyn io::Write,
+) -> io::Result<()> {
+    let shells = Shells::builtins();
+    let Some(env_shell) = shells.completer(shell_env_name(shell)) else {
+        return Err(std::io::Error::other(format!(
+            "Unsupported shell: {}",
+            shell_name(shell)
+        )));
+    };
+
+    let bin = cmd.get_bin_name().unwrap_or_else(|| cmd.get_name());
+    env_shell.write_registration("COMPLETE", cmd.get_name(), bin, bin, out)?;
+    Ok(())
 }
 
 /// Get human-readable shell name.
@@ -70,6 +76,16 @@ const fn shell_name(shell: ShellType) -> &'static str {
         ShellType::Zsh => "zsh",
         ShellType::Fish => "fish",
         ShellType::PowerShell => "PowerShell",
+        ShellType::Elvish => "elvish",
+    }
+}
+
+const fn shell_env_name(shell: ShellType) -> &'static str {
+    match shell {
+        ShellType::Bash => "bash",
+        ShellType::Zsh => "zsh",
+        ShellType::Fish => "fish",
+        ShellType::PowerShell => "powershell",
         ShellType::Elvish => "elvish",
     }
 }
@@ -125,34 +141,29 @@ mod tests {
         crate::logging::init_test_logging();
     }
 
-    #[test]
-    fn test_convert_shell_type() {
-        init_logging();
-        info!("test_convert_shell_type: starting");
-        assert_eq!(convert_shell_type(ShellType::Bash), Shell::Bash);
-        assert_eq!(convert_shell_type(ShellType::Zsh), Shell::Zsh);
-        assert_eq!(convert_shell_type(ShellType::Fish), Shell::Fish);
-        assert_eq!(convert_shell_type(ShellType::PowerShell), Shell::PowerShell);
-        assert_eq!(convert_shell_type(ShellType::Elvish), Shell::Elvish);
-        info!("test_convert_shell_type: assertions passed");
+    fn render_shell(shell: ShellType) -> String {
+        let cmd = Cli::command();
+        let mut output = Vec::new();
+        write_dynamic_completions(shell, &cmd, &mut output).expect("write dynamic completions");
+        String::from_utf8(output).expect("utf8")
     }
 
     #[test]
     fn test_bash_completion_generation() {
         init_logging();
         info!("test_bash_completion_generation: starting");
-        let mut cmd = Cli::command();
-        let mut output = Vec::new();
-        generate(Shell::Bash, &mut cmd, "br", &mut output);
-        let script = String::from_utf8(output).unwrap();
+        let script = render_shell(ShellType::Bash);
 
         // Verify basic structure
         assert!(
-            script.contains("complete"),
-            "should contain complete command"
+            script.contains("complete -o"),
+            "should contain bash complete command"
         );
         assert!(script.contains("br"), "should reference br command");
-        assert!(script.contains("_br"), "should define _br function");
+        assert!(
+            script.contains("_clap_complete_br"),
+            "should define dynamic completion function"
+        );
         info!("test_bash_completion_generation: assertions passed");
     }
 
@@ -160,13 +171,13 @@ mod tests {
     fn test_zsh_completion_generation() {
         init_logging();
         info!("test_zsh_completion_generation: starting");
-        let mut cmd = Cli::command();
-        let mut output = Vec::new();
-        generate(Shell::Zsh, &mut cmd, "br", &mut output);
-        let script = String::from_utf8(output).unwrap();
+        let script = render_shell(ShellType::Zsh);
 
-        assert!(script.contains("#compdef"), "should start with #compdef");
-        assert!(script.contains("br"), "should reference br command");
+        assert!(script.contains("#compdef br"), "should start with #compdef");
+        assert!(
+            script.contains("_clap_dynamic_completer_br"),
+            "should define dynamic completion function"
+        );
         info!("test_zsh_completion_generation: assertions passed");
     }
 
@@ -174,51 +185,13 @@ mod tests {
     fn test_fish_completion_generation() {
         init_logging();
         info!("test_fish_completion_generation: starting");
-        let mut cmd = Cli::command();
-        let mut output = Vec::new();
-        generate(Shell::Fish, &mut cmd, "br", &mut output);
-        let script = String::from_utf8(output).unwrap();
+        let script = render_shell(ShellType::Fish);
 
         assert!(
-            script.contains("complete -c br"),
-            "should use fish complete syntax"
+            script.contains("complete --keep-order"),
+            "should use fish completion registration"
         );
+        assert!(script.contains("COMPLETE=fish"), "should set COMPLETE env");
         info!("test_fish_completion_generation: assertions passed");
-    }
-
-    #[test]
-    fn test_completion_contains_commands() {
-        init_logging();
-        info!("test_completion_contains_commands: starting");
-        let mut cmd = Cli::command();
-        let mut output = Vec::new();
-        generate(Shell::Bash, &mut cmd, "br", &mut output);
-        let script = String::from_utf8(output).unwrap();
-
-        // Verify common commands are in completions
-        assert!(script.contains("create"), "should include create command");
-        assert!(script.contains("list"), "should include list command");
-        assert!(script.contains("show"), "should include show command");
-        assert!(script.contains("update"), "should include update command");
-        assert!(script.contains("close"), "should include close command");
-        info!("test_completion_contains_commands: assertions passed");
-    }
-
-    #[test]
-    fn test_completion_contains_global_flags() {
-        init_logging();
-        info!("test_completion_contains_global_flags: starting");
-        let mut cmd = Cli::command();
-        let mut output = Vec::new();
-        generate(Shell::Bash, &mut cmd, "br", &mut output);
-        let script = String::from_utf8(output).unwrap();
-
-        // Verify global flags are in completions
-        assert!(script.contains("--json"), "should include --json flag");
-        assert!(
-            script.contains("--verbose"),
-            "should include --verbose flag"
-        );
-        info!("test_completion_contains_global_flags: assertions passed");
     }
 }

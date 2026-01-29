@@ -5,13 +5,16 @@ use beads_rust::logging::init_logging;
 use beads_rust::output::OutputContext;
 use beads_rust::sync::{auto_flush, auto_import_if_stale};
 use beads_rust::{BeadsError, Result, StructuredError};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::CompleteEnv;
 use std::io::{self, IsTerminal};
 use std::path::Path;
 use tracing::debug;
 
 #[allow(clippy::too_many_lines)]
 fn main() {
+    CompleteEnv::with_factory(Cli::command).complete();
+
     let cli = Cli::parse();
     let output_ctx = OutputContext::from_args(&cli);
 
