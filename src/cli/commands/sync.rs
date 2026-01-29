@@ -107,7 +107,7 @@ pub fn execute(
 
     // Handle --status flag
     if args.status {
-        return execute_status(&storage, &path_policy, json, ctx);
+        return execute_status(&storage, &path_policy, use_json, ctx);
     }
 
     // Validate mutually exclusive modes
@@ -265,7 +265,7 @@ fn contains_git_dir(path: &Path) -> bool {
 fn execute_status(
     storage: &crate::storage::SqliteStorage,
     path_policy: &SyncPathPolicy,
-    _json: bool,
+    use_json: bool,
     ctx: &OutputContext,
 ) -> Result<()> {
     let dirty_count = storage.get_dirty_issue_count()?;
@@ -350,8 +350,9 @@ fn execute_status(
     };
     debug!(jsonl_newer, db_newer, "Computed sync staleness");
 
-    if ctx.is_json() {
-        ctx.json_pretty(&status);
+    if use_json {
+        // Print JSON directly so --robot works even if OutputContext is non-JSON.
+        println!("{}", serde_json::to_string_pretty(&status)?);
     } else if ctx.is_rich() {
         render_status_rich(&status, ctx);
     } else {

@@ -1616,7 +1616,9 @@ pub fn auto_import_if_stale(
     }
 
     let import_config = ImportConfig {
-        skip_prefix_validation: true,
+        // Auto-import should be strict about prefix mismatches to prevent
+        // silently importing issues from another project.
+        skip_prefix_validation: false,
         beads_dir: Some(beads_dir.to_path_buf()),
         allow_external_jsonl: false,
         show_progress: false,
