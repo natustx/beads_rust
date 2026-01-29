@@ -25,7 +25,9 @@ pub fn execute(
         // Check if DB exists (in cache dir if BEADS_CACHE_DIR is set)
         let effective_db_path = db_path(&beads_dir);
         if effective_db_path.exists() && !force {
-            return Err(BeadsError::AlreadyInitialized { path: effective_db_path });
+            return Err(BeadsError::AlreadyInitialized {
+                path: effective_db_path,
+            });
         }
     } else {
         fs::create_dir(&beads_dir)?;
