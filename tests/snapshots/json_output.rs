@@ -611,7 +611,10 @@ fn snapshot_ready_priority_ordering_json() {
             .iter()
             .filter_map(|item| item.get("priority").and_then(Value::as_i64))
             .collect();
-        let high_prio_end = priorities.iter().position(|&p| p > 1).unwrap_or(priorities.len());
+        let high_prio_end = priorities
+            .iter()
+            .position(|&p| p > 1)
+            .unwrap_or(priorities.len());
         for &p in &priorities[..high_prio_end] {
             assert!(p <= 1, "P0/P1 should appear in the first group, got P{p}");
         }
