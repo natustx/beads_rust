@@ -1066,6 +1066,10 @@ pub struct UpdateArgs {
     #[arg(long)]
     pub claim: bool,
 
+    /// Force update even if issue is blocked
+    #[arg(long)]
+    pub force: bool,
+
     /// Set due date (empty string clears)
     #[arg(long)]
     pub due: Option<String>,
