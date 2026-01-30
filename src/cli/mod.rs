@@ -59,7 +59,14 @@ struct CompletionIndex {
     types: Vec<String>,
 }
 
+#[derive(Default, Debug)]
+struct CompletionConfigIndex {
+    config_keys: Vec<String>,
+    saved_queries: Vec<String>,
+}
+
 static COMPLETION_INDEX: OnceLock<CompletionIndex> = OnceLock::new();
+static CONFIG_INDEX: OnceLock<CompletionConfigIndex> = OnceLock::new();
 
 const STATUS_CANDIDATES: &[(&str, &str)] = &[
     ("open", "Open issue"),
@@ -177,8 +184,19 @@ const ORPHAN_MODE_CANDIDATES: &[(&str, &str)] = &[
     ("allow", "Allow orphans (no parent validation)"),
 ];
 
+const SAVED_QUERY_PREFIX: &str = "saved_query:";
+
 fn completion_index() -> &'static CompletionIndex {
     COMPLETION_INDEX.get_or_init(build_completion_index)
+}
+
+fn config_index() -> &'static CompletionConfigIndex {
+    CONFIG_INDEX.get_or_init(build_config_index)
+}
+
+fn add_layer_keys(keys: &mut BTreeSet<String>, layer: &config::ConfigLayer) {
+    keys.extend(layer.runtime.keys().cloned());
+    keys.extend(layer.startup.keys().cloned());
 }
 
 fn build_completion_index() -> CompletionIndex {
@@ -246,6 +264,47 @@ fn build_completion_index() -> CompletionIndex {
         assignees: assignees.into_iter().collect(),
         owners: owners.into_iter().collect(),
         types: types.into_iter().collect(),
+    }
+}
+
+fn build_config_index() -> CompletionConfigIndex {
+    let mut keys = BTreeSet::new();
+    let mut saved_queries = BTreeSet::new();
+
+    add_layer_keys(&mut keys, &config::default_config_layer());
+    if let Ok(legacy_user) = config::load_legacy_user_config() {
+        add_layer_keys(&mut keys, &legacy_user);
+    }
+    if let Ok(user) = config::load_user_config() {
+        add_layer_keys(&mut keys, &user);
+    }
+    add_layer_keys(&mut keys, &config::ConfigLayer::from_env());
+
+    if let Ok(beads_dir) = config::discover_beads_dir(None) {
+        if let Ok(project) = config::load_project_config(&beads_dir) {
+            add_layer_keys(&mut keys, &project);
+        }
+        if let Ok(storage_ctx) =
+            config::open_storage_with_cli(&beads_dir, &config::CliOverrides::default())
+        {
+            if let Ok(db_layer) = config::ConfigLayer::from_db(&storage_ctx.storage) {
+                add_layer_keys(&mut keys, &db_layer);
+            }
+            if let Ok(map) = storage_ctx.storage.get_all_config() {
+                for key in map.keys() {
+                    if let Some(name) = key.strip_prefix(SAVED_QUERY_PREFIX) {
+                        if !name.trim().is_empty() {
+                            saved_queries.insert(name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    CompletionConfigIndex {
+        config_keys: keys.into_iter().collect(),
+        saved_queries: saved_queries.into_iter().collect(),
     }
 }
 
@@ -529,6 +588,38 @@ fn dep_tree_format_completer(current: &OsStr) -> Vec<CompletionCandidate> {
         return Vec::new();
     };
     static_candidates(prefix, DEP_TREE_FORMAT_CANDIDATES)
+}
+
+fn saved_query_completer(current: &OsStr) -> Vec<CompletionCandidate> {
+    let Some(prefix) = current.to_str() else {
+        return Vec::new();
+    };
+    dynamic_candidates(prefix, &config_index().saved_queries)
+}
+
+fn config_key_completer(current: &OsStr) -> Vec<CompletionCandidate> {
+    let Some(prefix) = current.to_str() else {
+        return Vec::new();
+    };
+    dynamic_candidates(prefix, &config_index().config_keys)
+}
+
+fn config_key_assignment_completer(current: &OsStr) -> Vec<CompletionCandidate> {
+    let Some(prefix) = current.to_str() else {
+        return Vec::new();
+    };
+    if prefix.contains('=') {
+        return Vec::new();
+    }
+
+    let mut candidates = Vec::new();
+    for key in &config_index().config_keys {
+        if matches_prefix_case_insensitive(key, prefix) {
+            candidates.push(CompletionCandidate::new(key));
+            candidates.push(CompletionCandidate::new(format!("{key}=")));
+        }
+    }
+    candidates
 }
 
 fn export_error_policy_completer(current: &OsStr) -> Vec<CompletionCandidate> {
@@ -1992,6 +2083,10 @@ pub struct SyncArgs {
     #[arg(long, add = ArgValueCompleter::new(orphan_mode_completer))]
     pub orphans: Option<String>,
 
+    /// Rename issues with wrong prefix to expected prefix during import
+    #[arg(long)]
+    pub rename_prefix: bool,
+
     /// Machine-readable output (alias for --json)
     #[arg(long)]
     pub robot: bool,
@@ -2013,13 +2108,18 @@ pub enum ConfigCommands {
     /// Get a specific config value
     Get {
         /// Config key
+        #[arg(add = ArgValueCompleter::new(config_key_completer))]
         key: String,
     },
 
     /// Set a config value
     Set {
         /// Config key=value pair (or key value)
-        #[arg(num_args = 1..=2, value_name = "KV")]
+        #[arg(
+            num_args = 1..=2,
+            value_name = "KV",
+            add = ArgValueCompleter::new(config_key_assignment_completer)
+        )]
         args: Vec<String>,
     },
 
@@ -2027,6 +2127,7 @@ pub enum ConfigCommands {
     #[command(visible_alias = "unset")]
     Delete {
         /// Config key
+        #[arg(add = ArgValueCompleter::new(config_key_completer))]
         key: String,
     },
 
@@ -2217,6 +2318,7 @@ pub struct QuerySaveArgs {
 #[derive(Args, Debug, Clone)]
 pub struct QueryRunArgs {
     /// Name of the saved query to run
+    #[arg(add = ArgValueCompleter::new(saved_query_completer))]
     pub name: String,
 
     /// Additional filters to merge with saved query (CLI overrides saved)
@@ -2228,6 +2330,7 @@ pub struct QueryRunArgs {
 #[derive(Args, Debug, Clone)]
 pub struct QueryDeleteArgs {
     /// Name of the saved query to delete
+    #[arg(add = ArgValueCompleter::new(saved_query_completer))]
     pub name: String,
 }
 
