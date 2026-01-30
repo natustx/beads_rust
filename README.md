@@ -265,6 +265,8 @@ cargo install --path .
 cargo install --git https://github.com/Dicklesworthstone/beads_rust.git
 ```
 
+> **Note:** `cargo install` places binaries in `~/.cargo/bin/`, while the install script uses `~/.local/bin/`. If you have both in PATH, ensure the desired location has higher priority to avoid running an outdated version. Run `which br` to verify which binary is active.
+
 ### Disable Self-Update
 
 ```bash

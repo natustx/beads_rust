@@ -1105,6 +1105,55 @@ download_release() {
 }
 
 # ============================================================================
+# Check for conflicting installations
+# ============================================================================
+check_conflicts() {
+    local installed_path="$DEST/$BINARY_NAME"
+    local cargo_bin="$HOME/.cargo/bin/$BINARY_NAME"
+    local local_bin="$HOME/.local/bin/$BINARY_NAME"
+
+    local conflicts=()
+
+    # Check for br in other locations
+    if [ "$DEST" != "$HOME/.cargo/bin" ] && [ -x "$cargo_bin" ]; then
+        conflicts+=("$cargo_bin")
+    fi
+    if [ "$DEST" != "$HOME/.local/bin" ] && [ -x "$local_bin" ]; then
+        conflicts+=("$local_bin")
+    fi
+
+    if [ ${#conflicts[@]} -gt 0 ]; then
+        log_warn "Found br in multiple locations:"
+        log_step "  Installed: $installed_path"
+        for conflict in "${conflicts[@]}"; do
+            log_step "  Conflict:  $conflict"
+        done
+
+        # Check PATH priority
+        local active_br
+        active_br=$(command -v br 2>/dev/null || echo "")
+        if [ -n "$active_br" ] && [ "$active_br" != "$installed_path" ]; then
+            log_warn "The active br ($active_br) differs from the newly installed version!"
+            log_warn "To use the new version, either:"
+            log_step "  1. Remove the conflicting binary: rm $active_br"
+            log_step "  2. Adjust PATH so $DEST comes first"
+        fi
+
+        # Offer to remove conflicts in easy mode
+        if [ "$EASY" -eq 1 ]; then
+            for conflict in "${conflicts[@]}"; do
+                if [ -t 0 ] && [[ "$GUM_AVAILABLE" == "true" ]]; then
+                    if gum confirm "Remove conflicting binary at $conflict?"; then
+                        rm -f "$conflict"
+                        log_success "Removed $conflict"
+                    fi
+                fi
+            done
+        fi
+    fi
+}
+
+# ============================================================================
 # Print installation summary
 # ============================================================================
 print_summary() {
@@ -1202,6 +1251,7 @@ main() {
     # Post-install steps
     maybe_add_path
     fix_alias_conflicts
+    check_conflicts
     install_skills
 
     # Verify installation
