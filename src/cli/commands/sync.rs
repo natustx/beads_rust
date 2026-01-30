@@ -928,7 +928,7 @@ fn execute_import(
         // Keep prefix validation when explicitly renaming prefixes.
         skip_prefix_validation: args.force && !args.rename_prefix,
         rename_on_import: args.rename_prefix,
-        clear_duplicate_external_refs: false,
+        clear_duplicate_external_refs: args.rename_prefix,
         orphan_mode,
         force_upsert: args.force,
         beads_dir: Some(path_policy.beads_dir.clone()),
