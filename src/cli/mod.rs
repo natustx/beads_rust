@@ -1911,6 +1911,14 @@ pub struct ReadyArgs {
     #[arg(long)]
     pub include_deferred: bool,
 
+    /// Filter to children of this parent issue ID
+    #[arg(long, add = ArgValueCompleter::new(issue_id_completer))]
+    pub parent: Option<String>,
+
+    /// Include all descendants (grandchildren, etc.) with --parent
+    #[arg(long, short = 'r')]
+    pub recursive: bool,
+
     /// Wrap long lines instead of truncating in text output
     #[arg(long)]
     pub wrap: bool,

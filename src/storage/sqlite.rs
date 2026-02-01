@@ -1129,6 +1129,35 @@ impl SqliteStorage {
             }
         }
 
+        // Filter by parent (--parent flag)
+        if let Some(ref parent_id) = filters.parent {
+            if filters.recursive {
+                // Recursive: include all descendants using CTE
+                sql.push_str(
+                    " AND id IN (
+                        WITH RECURSIVE descendants AS (
+                            SELECT issue_id FROM dependencies
+                            WHERE depends_on_id = ? AND type = 'parent-child'
+                            UNION ALL
+                            SELECT d.issue_id FROM dependencies d
+                            INNER JOIN descendants desc ON d.depends_on_id = desc.issue_id
+                            WHERE d.type = 'parent-child'
+                        )
+                        SELECT issue_id FROM descendants
+                    )",
+                );
+            } else {
+                // Non-recursive: only direct children
+                sql.push_str(
+                    " AND id IN (
+                        SELECT issue_id FROM dependencies
+                        WHERE depends_on_id = ? AND type = 'parent-child'
+                    )",
+                );
+            }
+            params.push(Box::new(parent_id.clone()));
+        }
+
         // Sorting
         match sort {
             ReadySortPolicy::Hybrid => {
@@ -1216,6 +1245,35 @@ impl SqliteStorage {
             .prepare_cached("SELECT EXISTS(SELECT 1 FROM blocked_issues_cache WHERE issue_id = ?)")?
             .query_row([issue_id], |row| row.get(0))?;
         Ok(exists)
+    }
+
+    /// Get the actual blockers for an issue from the blocked issues cache.
+    ///
+    /// Returns the issue IDs that are blocking this issue. The format includes
+    /// status annotations like "bd-123:open" or "bd-456:parent-blocked".
+    /// Returns an empty vec if the issue is not blocked.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub fn get_blockers(&self, issue_id: &str) -> Result<Vec<String>> {
+        let json_opt: Option<String> = self
+            .conn
+            .prepare_cached("SELECT blocked_by FROM blocked_issues_cache WHERE issue_id = ?")?
+            .query_row([issue_id], |row| row.get(0))
+            .optional()?;
+
+        match json_opt {
+            Some(json) => {
+                let blockers: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+                // Extract just the issue IDs (strip status annotations like ":open")
+                Ok(blockers
+                    .into_iter()
+                    .map(|b| b.split(':').next().unwrap_or(&b).to_string())
+                    .collect())
+            }
+            None => Ok(Vec::new()),
+        }
     }
 
     /// Rebuild the blocked issues cache from scratch.
@@ -1606,8 +1664,9 @@ impl SqliteStorage {
     pub fn find_ids_by_hash(&self, hash_suffix: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT id FROM issues WHERE id LIKE ?")?;
-        let pattern = format!("%-%{hash_suffix}%");
+            .prepare_cached("SELECT id FROM issues WHERE id LIKE ? ESCAPE '\\'")?;
+        let escaped = escape_like_pattern(hash_suffix);
+        let pattern = format!("%-{escaped}%");
         let ids = stmt
             .query_map([pattern], |row| row.get(0))?
             .collect::<std::result::Result<Vec<String>, _>>()?;
@@ -2405,10 +2464,12 @@ impl SqliteStorage {
     /// Returns an error if the database query fails.
     pub fn next_child_number(&self, parent_id: &str) -> Result<u32> {
         // Find all existing child IDs matching the pattern {parent_id}.N
-        let pattern = format!("{parent_id}.%");
+        // Escape LIKE wildcards in parent_id to prevent injection
+        let escaped_parent = escape_like_pattern(parent_id);
+        let pattern = format!("{escaped_parent}.%");
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT id FROM issues WHERE id LIKE ?")?;
+            .prepare_cached("SELECT id FROM issues WHERE id LIKE ? ESCAPE '\\'")?;
         let ids: Vec<String> = stmt
             .query_map([&pattern], |row| row.get(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -3148,6 +3209,10 @@ pub struct ReadyFilters {
     pub priorities: Option<Vec<Priority>>,
     pub include_deferred: bool,
     pub limit: Option<usize>,
+    /// Filter to children of this parent issue ID.
+    pub parent: Option<String>,
+    /// Include all descendants (grandchildren, etc.) not just direct children.
+    pub recursive: bool,
 }
 
 /// Sort policy for ready issues.
@@ -4862,6 +4927,84 @@ mod tests {
             .get_ready_issues(&filters_or_backend, ReadySortPolicy::Oldest)
             .unwrap();
         assert_eq!(res.len(), 2);
+    }
+
+    #[test]
+    fn test_get_ready_issues_filters_by_parent() {
+        let mut storage = SqliteStorage::open_memory().unwrap();
+        let t1 = Utc::now();
+
+        // Create parent epic
+        let parent = make_issue("bd-epic", "Parent Epic", Status::Open, 1, None, t1, None);
+        storage.create_issue(&parent, "tester").unwrap();
+
+        // Create direct children of the epic
+        let child1 = make_issue("bd-epic.1", "Child 1", Status::Open, 2, None, t1, None);
+        let child2 = make_issue("bd-epic.2", "Child 2", Status::Open, 2, None, t1, None);
+        storage.create_issue(&child1, "tester").unwrap();
+        storage.create_issue(&child2, "tester").unwrap();
+
+        // Create grandchild (child of child1)
+        let grandchild = make_issue("bd-epic.1.1", "Grandchild", Status::Open, 2, None, t1, None);
+        storage.create_issue(&grandchild, "tester").unwrap();
+
+        // Create unrelated issue (not a child of the epic)
+        let unrelated = make_issue("bd-other", "Unrelated", Status::Open, 2, None, t1, None);
+        storage.create_issue(&unrelated, "tester").unwrap();
+
+        // Add parent-child dependencies
+        storage
+            .add_dependency("bd-epic.1", "bd-epic", "parent-child", "tester")
+            .unwrap();
+        storage
+            .add_dependency("bd-epic.2", "bd-epic", "parent-child", "tester")
+            .unwrap();
+        storage
+            .add_dependency("bd-epic.1.1", "bd-epic.1", "parent-child", "tester")
+            .unwrap();
+
+        // Test: --parent bd-epic (non-recursive) should return only direct children
+        let filters_direct = ReadyFilters {
+            parent: Some("bd-epic".to_string()),
+            recursive: false,
+            ..Default::default()
+        };
+        let res = storage
+            .get_ready_issues(&filters_direct, ReadySortPolicy::Oldest)
+            .unwrap();
+        assert_eq!(res.len(), 2, "Non-recursive should return only direct children");
+        let ids: Vec<&str> = res.iter().map(|i| i.id.as_str()).collect();
+        assert!(ids.contains(&"bd-epic.1"), "Should contain child1");
+        assert!(ids.contains(&"bd-epic.2"), "Should contain child2");
+        assert!(!ids.contains(&"bd-epic.1.1"), "Should NOT contain grandchild");
+
+        // Test: --parent bd-epic --recursive should return all descendants
+        let filters_recursive = ReadyFilters {
+            parent: Some("bd-epic".to_string()),
+            recursive: true,
+            ..Default::default()
+        };
+        let res = storage
+            .get_ready_issues(&filters_recursive, ReadySortPolicy::Oldest)
+            .unwrap();
+        assert_eq!(res.len(), 3, "Recursive should return all descendants");
+        let ids: Vec<&str> = res.iter().map(|i| i.id.as_str()).collect();
+        assert!(ids.contains(&"bd-epic.1"), "Should contain child1");
+        assert!(ids.contains(&"bd-epic.2"), "Should contain child2");
+        assert!(ids.contains(&"bd-epic.1.1"), "Should contain grandchild");
+        assert!(!ids.contains(&"bd-epic"), "Should NOT contain the parent itself");
+        assert!(!ids.contains(&"bd-other"), "Should NOT contain unrelated issue");
+
+        // Test: --parent with non-existent parent should return empty
+        let filters_nonexistent = ReadyFilters {
+            parent: Some("bd-nonexistent".to_string()),
+            recursive: false,
+            ..Default::default()
+        };
+        let res = storage
+            .get_ready_issues(&filters_nonexistent, ReadySortPolicy::Oldest)
+            .unwrap();
+        assert_eq!(res.len(), 0, "Non-existent parent should return empty");
     }
 
     #[test]

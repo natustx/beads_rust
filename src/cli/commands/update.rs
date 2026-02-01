@@ -86,9 +86,9 @@ pub fn execute(args: &UpdateArgs, cli: &config::CliOverrides, ctx: &OutputContex
                 .is_some_and(|s| s.eq_ignore_ascii_case("in_progress"));
 
         if transitioning_to_in_progress && !args.force && storage.is_blocked(id)? {
-            let blockers = storage.get_dependencies(id)?;
+            let blockers = storage.get_blockers(id)?;
             let blocker_list = if blockers.is_empty() {
-                "dependencies".to_string()
+                "blocking dependencies".to_string()
             } else {
                 blockers.join(", ")
             };

@@ -52,6 +52,8 @@ pub fn execute(
         include_deferred: args.include_deferred,
         // Fetch all candidates to allow post-filtering of external blockers
         limit: None,
+        parent: args.parent.clone(),
+        recursive: args.recursive,
     };
 
     let sort_policy = match args.sort {
