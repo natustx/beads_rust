@@ -46,10 +46,12 @@ pub fn execute(
     let mut storage = SqliteStorage::open(&effective_db_path)?;
 
     // Set prefix in config table if provided
+    // Normalize to lowercase since ID validation requires lowercase prefixes
     let mut prefix_set = None;
     if let Some(p) = prefix {
-        storage.set_config("issue_prefix", &p)?;
-        prefix_set = Some(p);
+        let normalized = p.to_ascii_lowercase();
+        storage.set_config("issue_prefix", &normalized)?;
+        prefix_set = Some(normalized);
     }
 
     // Write metadata.json

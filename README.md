@@ -762,11 +762,11 @@ Quick example:
 
 ```bash
 # Agent workflow
-bd ready --json | jq '.[0]'           # Get top priority
-bd update bd-abc --status in_progress # Claim work
+br ready --json | jq '.[0]'           # Get top priority
+br update bd-abc --status in_progress # Claim work
 # ... do work ...
-bd close bd-abc --reason "Completed"  # Done
-bd sync --flush-only                  # Export for git
+br close bd-abc --reason "Completed"  # Done
+br sync --flush-only                  # Export for git
 ```
 
 ---
