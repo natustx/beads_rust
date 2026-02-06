@@ -12,7 +12,7 @@
 #   HARNESS_ARTIFACTS=1       Enable artifact logging to target/test-artifacts/
 #   HARNESS_PRESERVE_SUCCESS=1  Keep artifacts even on success
 #   BR_BINARY=/path/to/br     Override br binary location
-#   E2E_TIMEOUT=300           Per-test timeout in seconds (default: 60)
+#   E2E_TIMEOUT=300           Per-test timeout in seconds (default: 180)
 #
 # Output:
 #   - Exit code 0 on success, 1 on failure
