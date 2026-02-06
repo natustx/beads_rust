@@ -21,32 +21,21 @@ fn init_workspace(workspace: &BrWorkspace) {
     assert!(init.status.success(), "init failed: {}", init.stderr);
 }
 
-/// Check that completions output contains expected subcommand names.
-fn assert_contains_subcommands(output: &str, shell_name: &str) {
-    // Core subcommands that should appear in all completions
-    let expected_subcommands = [
-        "init", "create", "list", "show", "update", "close", "sync", "audit", "q",
-    ];
-
-    for cmd in expected_subcommands {
-        assert!(
-            output.contains(cmd),
-            "{shell_name} completions should contain '{cmd}' subcommand"
-        );
-    }
-}
-
-/// Check that completions output contains expected flag names.
-fn assert_contains_flags(output: &str, shell_name: &str) {
-    // Global flags that should appear in completions
-    let expected_flags = ["--help", "--json", "--verbose", "--quiet"];
-
-    for flag in expected_flags {
-        assert!(
-            output.contains(flag),
-            "{shell_name} completions should contain '{flag}' flag"
-        );
-    }
+/// Check that completions output contains dynamic completion registration markers.
+/// Dynamic completions (via clap_complete::env::Shells) generate a registration stub
+/// that calls the binary at runtime to resolve completions, rather than embedding
+/// static subcommand/flag lists in the script.
+fn assert_contains_dynamic_markers(output: &str, shell_name: &str) {
+    // All dynamic completion scripts must reference the binary name
+    assert!(
+        output.contains("br"),
+        "{shell_name} completions should reference 'br' binary"
+    );
+    // All dynamic completion scripts set a COMPLETE env var
+    assert!(
+        output.contains("COMPLETE"),
+        "{shell_name} completions should contain COMPLETE env var for dynamic resolution"
+    );
 }
 
 // =============================================================================
@@ -68,14 +57,14 @@ fn e2e_completions_bash_generates_valid_script() {
         completions.stderr
     );
 
-    // Bash completions should define the completion function
+    // Dynamic bash completions register via clap_complete::env::Shells
     assert!(
-        completions.stdout.contains("_br()"),
-        "bash completions should define _br function"
+        completions.stdout.contains("_clap_complete_br"),
+        "bash completions should define _clap_complete_br dynamic function"
     );
     assert!(
-        completions.stdout.contains("COMPREPLY"),
-        "bash completions should use COMPREPLY"
+        completions.stdout.contains("complete -o"),
+        "bash completions should register via complete command"
     );
     info!("e2e_completions_bash_generates_valid_script: done");
 }
@@ -97,7 +86,7 @@ fn e2e_completions_bash_contains_subcommands() {
         completions.stderr
     );
 
-    assert_contains_subcommands(&completions.stdout, "bash");
+    assert_contains_dynamic_markers(&completions.stdout,"bash");
     info!("e2e_completions_bash_contains_subcommands: done");
 }
 
@@ -118,7 +107,7 @@ fn e2e_completions_bash_contains_flags() {
         completions.stderr
     );
 
-    assert_contains_flags(&completions.stdout, "bash");
+    assert_contains_dynamic_markers(&completions.stdout, "bash");
     info!("e2e_completions_bash_contains_flags: done");
 }
 
@@ -165,7 +154,7 @@ fn e2e_completions_zsh_contains_subcommands() {
         completions.stderr
     );
 
-    assert_contains_subcommands(&completions.stdout, "zsh");
+    assert_contains_dynamic_markers(&completions.stdout,"zsh");
     info!("e2e_completions_zsh_contains_subcommands: done");
 }
 
@@ -212,7 +201,7 @@ fn e2e_completions_fish_contains_subcommands() {
         completions.stderr
     );
 
-    assert_contains_subcommands(&completions.stdout, "fish");
+    assert_contains_dynamic_markers(&completions.stdout,"fish");
     info!("e2e_completions_fish_contains_subcommands: done");
 }
 
@@ -238,11 +227,11 @@ fn e2e_completions_powershell_generates_valid_script() {
         completions.stderr
     );
 
-    // PowerShell completions should register argument completer
+    // Dynamic PowerShell completions register via COMPLETE env var
     assert!(
         completions.stdout.contains("Register-ArgumentCompleter")
-            || completions.stdout.contains("$scriptBlock"),
-        "powershell completions should have argument completer"
+            || completions.stdout.contains("COMPLETE"),
+        "powershell completions should have argument completer or COMPLETE registration"
     );
     info!("e2e_completions_powershell_generates_valid_script: done");
 }
@@ -264,7 +253,7 @@ fn e2e_completions_powershell_contains_subcommands() {
         completions.stderr
     );
 
-    assert_contains_subcommands(&completions.stdout, "powershell");
+    assert_contains_dynamic_markers(&completions.stdout,"powershell");
     info!("e2e_completions_powershell_contains_subcommands: done");
 }
 
@@ -286,10 +275,10 @@ fn e2e_completions_elvish_generates_valid_script() {
         completions.stderr
     );
 
-    // Elvish completions should have edit:completion or set edit:
+    // Dynamic elvish completions register via COMPLETE env var
     assert!(
-        completions.stdout.contains("edit:") || completions.stdout.contains("set edit:"),
-        "elvish completions should have edit: namespace"
+        completions.stdout.contains("edit:") || completions.stdout.contains("COMPLETE"),
+        "elvish completions should have edit: namespace or COMPLETE registration"
     );
     info!("e2e_completions_elvish_generates_valid_script: done");
 }
@@ -462,12 +451,12 @@ fn e2e_completions_bash_file_output() {
     // Verify file content
     let file_content = fs::read_to_string(&output_file).expect("read completion file");
     assert!(
-        file_content.contains("_br()"),
-        "bash completions file should define _br function"
+        file_content.contains("_clap_complete_br"),
+        "bash completions file should define _clap_complete_br dynamic function"
     );
     assert!(
-        file_content.contains("COMPREPLY"),
-        "bash completions file should use COMPREPLY"
+        file_content.contains("complete -o"),
+        "bash completions file should register via complete command"
     );
     info!("e2e_completions_bash_file_output: done");
 }
@@ -565,8 +554,8 @@ fn e2e_completions_powershell_file_output() {
     let file_content = fs::read_to_string(&output_file).expect("read completion file");
     assert!(
         file_content.contains("Register-ArgumentCompleter")
-            || file_content.contains("$scriptBlock"),
-        "powershell completions file should have argument completer"
+            || file_content.contains("COMPLETE"),
+        "powershell completions file should have argument completer or COMPLETE registration"
     );
     info!("e2e_completions_powershell_file_output: done");
 }
@@ -639,7 +628,7 @@ fn e2e_completions_file_output_overwrites_existing() {
         "file should be overwritten, not appended"
     );
     assert!(
-        file_content.contains("_br()"),
+        file_content.contains("_clap_complete_br"),
         "file should contain new completion script"
     );
     info!("e2e_completions_file_output_overwrites_existing: done");

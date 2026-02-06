@@ -110,7 +110,7 @@ log "Artifacts: $ARTIFACTS_DIR"
 for test in "${QUICK_TESTS[@]}"; do
     # Apply filter if specified
     if [[ -n "$FILTER" ]] && [[ ! "$test" =~ $FILTER ]]; then
-        ((SKIPPED++))
+        SKIPPED=$((SKIPPED + 1))
         continue
     fi
 
@@ -121,18 +121,18 @@ for test in "${QUICK_TESTS[@]}"; do
     if [[ "$VERBOSE" -eq 1 ]]; then
         if timeout "$TIMEOUT" cargo test --release --test "$test" -- --nocapture 2>&1; then
             RESULT="pass"
-            ((PASSED++))
+            PASSED=$((PASSED + 1))
         else
             RESULT="fail"
-            ((FAILED++))
+            FAILED=$((FAILED + 1))
         fi
     else
         if timeout "$TIMEOUT" cargo test --release --test "$test" -- --nocapture >/dev/null 2>&1; then
             RESULT="pass"
-            ((PASSED++))
+            PASSED=$((PASSED + 1))
         else
             RESULT="fail"
-            ((FAILED++))
+            FAILED=$((FAILED + 1))
         fi
     fi
 
